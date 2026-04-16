@@ -3,7 +3,7 @@ import pytest
 import pytest_asyncio
 from datetime import date
 from unittest.mock import patch, MagicMock, AsyncMock
-from app.data_sources.base import BondInfo
+from app.data_sources.base import BondInfo, DataSource
 from app.data_sources.akshare_source import AKShareSource
 from app.data_sources.manual_source import ManualSource
 
@@ -53,3 +53,46 @@ async def test_manual_source_returns_confirmed_bonds(db_session):
     src = ManualSource(db_session)
     results = await src.fetch(date(2025, 4, 16))
     assert any(b.bond_code == "123456" for b in results)
+
+
+@pytest.mark.asyncio
+async def test_aggregator_confirms_bond_seen_in_two_sources():
+    from app.data_sources.aggregator import BondAggregator
+
+    class _FakeSource(DataSource):
+        name = "fake"
+
+        def __init__(self, bonds):
+            self._bonds = bonds
+
+        async def fetch(self, trade_date):
+            return self._bonds
+
+    bond_a = BondInfo(bond_code="123456", bond_name="债A", market="SH", trade_date=date(2025, 4, 16), source="s1")
+    bond_b = BondInfo(bond_code="123456", bond_name="债A", market="SH", trade_date=date(2025, 4, 16), source="s2")
+
+    agg = BondAggregator([_FakeSource([bond_a]), _FakeSource([bond_b])])
+    confirmed, pending = await agg.aggregate(date(2025, 4, 16))
+    assert any(b.bond_code == "123456" for b in confirmed)
+    assert not any(b.bond_code == "123456" for b in pending)
+
+
+@pytest.mark.asyncio
+async def test_aggregator_sends_single_source_to_pending():
+    from app.data_sources.aggregator import BondAggregator
+
+    class _FakeSource(DataSource):
+        name = "fake"
+
+        def __init__(self, bonds):
+            self._bonds = bonds
+
+        async def fetch(self, trade_date):
+            return self._bonds
+
+    bond_only_one = BondInfo(bond_code="654321", bond_name="债B", market="SZ", trade_date=date(2025, 4, 16), source="s1")
+
+    agg = BondAggregator([_FakeSource([bond_only_one]), _FakeSource([])])
+    confirmed, pending = await agg.aggregate(date(2025, 4, 16))
+    assert not any(b.bond_code == "654321" for b in confirmed)
+    assert any(b.bond_code == "654321" for b in pending)
