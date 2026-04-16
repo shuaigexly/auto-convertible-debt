@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 from datetime import date
 
 from apscheduler.events import EVENT_JOB_ERROR
@@ -22,9 +23,9 @@ from app.data_sources.base import BondInfo
 from app.data_sources.manual_source import ManualSource
 from app.data_sources.scraper import EastMoneySource, JisiluSource
 from app.shared.crypto import decrypt, get_keys_from_env
-from app.shared.db import _get_session_factory
+from app.shared.db import _get_engine, _get_session_factory
 from app.shared.models import Account, BondSnapshot, Subscription, SubscriptionStatus
-from app.worker.executor import Executor
+from app.worker.executor import Executor, MAX_RETRIES
 from app.worker.reconciler import Reconciler
 
 logger = logging.getLogger(__name__)
@@ -105,23 +106,27 @@ async def job_warmup() -> None:
     async with _get_session_factory()() as session:
         result = await session.execute(select(Account).where(Account.enabled.is_(True)))
         accounts = result.scalars().all()
-    for account in accounts:
-        adapter = _get_adapter(account)
-        health = await adapter.healthcheck()
-        if not health.ok:
-            logger.warning(
-                "job_warmup: account %s broker unhealthy: %s",
-                account.id,
-                health.message,
-            )
-            continue
-        creds = _decrypt_creds(account)
-        ok = await adapter.login(creds)
-        if not ok:
-            logger.warning("job_warmup: login failed for account %s", account.id)
-            continue
-        _adapter_pool[account.id] = adapter
-        logger.info("job_warmup: account %s logged in and pooled", account.id)
+        for account in accounts:
+            try:
+                adapter = _get_adapter(account)
+                health = await adapter.healthcheck()
+                if not health.ok:
+                    logger.warning(
+                        "job_warmup: account %s broker unhealthy: %s",
+                        account.id,
+                        health.message,
+                    )
+                    continue
+                creds = _decrypt_creds(account)
+                ok = await adapter.login(creds)
+                if not ok:
+                    logger.warning("job_warmup: login failed for account %s", account.id)
+                    continue
+                _adapter_pool[account.id] = adapter
+                logger.info("job_warmup: account %s logged in and pooled", account.id)
+            except Exception as exc:
+                logger.exception("job_warmup: failed for account %s: %s", account.id, exc)
+                continue
 
 
 async def _run_subscribe(trade_date: date, retry_only: bool = False) -> None:
@@ -161,7 +166,7 @@ async def _run_subscribe(trade_date: date, retry_only: bool = False) -> None:
                 select(Subscription.bond_code).where(
                     Subscription.trade_date == trade_date,
                     Subscription.status == SubscriptionStatus.FAILED,
-                    Subscription.retry_count < 2,
+                    Subscription.retry_count < MAX_RETRIES,
                 ).distinct()
             )
             retryable_codes = {row[0] for row in failed_result.all()}
@@ -259,14 +264,36 @@ def create_scheduler() -> AsyncIOScheduler:
 
 
 async def main() -> None:
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
     scheduler = create_scheduler()
+
+    def _handle_sigterm() -> None:
+        logger.info("Received SIGTERM, shutting down gracefully.")
+        stop_event.set()
+
+    try:
+        loop.add_signal_handler(signal.SIGTERM, _handle_sigterm)
+    except NotImplementedError:
+        logger.warning("SIGTERM handler is not supported on this platform")
+
     scheduler.start()
     logger.info("Scheduler started. Jobs: %s", [job.id for job in scheduler.get_jobs()])
     try:
-        while True:
-            await asyncio.sleep(60)
+        while not stop_event.is_set():
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                continue
     except (KeyboardInterrupt, SystemExit):
+        stop_event.set()
+    finally:
         scheduler.shutdown()
+        await _get_engine().dispose()
+        try:
+            loop.remove_signal_handler(signal.SIGTERM)
+        except NotImplementedError:
+            pass
         logger.info("Scheduler stopped.")
 
 
