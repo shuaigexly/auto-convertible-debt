@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.shared.db import get_db
@@ -15,7 +17,11 @@ async def list_config(session: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{key}", response_model=ConfigEntryOut)
-async def upsert_config(key: str, body: ConfigEntryCreate, session: AsyncSession = Depends(get_db)):
+async def upsert_config(
+    key: Annotated[str, Path(max_length=100)],
+    body: ConfigEntryCreate,
+    session: AsyncSession = Depends(get_db),
+):
     entry = await session.get(ConfigEntry, key)
     if entry:
         entry.value = body.value
