@@ -145,6 +145,49 @@ async def test_executor_risk_control_sets_retry_count_to_max(db_session):
     assert sub.retry_count == MAX_RETRIES  # 非重试类失败不得被 retry job 再次选取
 
 
+@pytest.mark.asyncio
+async def test_executor_retryable_failure_leaves_retry_count_below_max(db_session):
+    """SESSION_EXPIRED 等 retryable 失败后，retry_count 应 < MAX_RETRIES，
+    使 retry job 能选到该记录进行重试。"""
+    from app.shared.crypto import encrypt
+    from app.worker.executor import MAX_RETRIES
+    import os, json
+    os.environ.setdefault("ENCRYPTION_KEY", "dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=")
+    key = os.environ["ENCRYPTION_KEY"]
+    creds = encrypt(json.dumps({"exe_path": ""}), key)
+
+    account = Account(name="test_retryable", broker="mock", credentials_enc=creds, enabled=True)
+    db_session.add(account)
+    await db_session.commit()
+    await db_session.refresh(account)
+
+    today = date(2025, 4, 16)
+    mock_adapter = MockBroker()
+    mock_adapter.subscribe_bond = AsyncMock(
+        return_value=SubscribeResult(code=SubscribeResultCode.SESSION_EXPIRED, message="session expired")
+    )
+    mock_adapter.query_today_orders = AsyncMock(return_value=[])
+
+    pool = {account.id: mock_adapter}
+    executor = Executor(session=db_session, dry_run=False, adapter_pool=pool)
+    bonds = [BondInfo("550001", "E债", "SZ", today, "test")]
+    await executor.run_for_account(account, mock_adapter, bonds, today)
+
+    from sqlalchemy import select
+    result = await db_session.execute(
+        select(Subscription).where(
+            Subscription.account_id == account.id,
+            Subscription.bond_code == "550001",
+        )
+    )
+    sub = result.scalar_one_or_none()
+    assert sub is not None
+    assert sub.status == SubscriptionStatus.FAILED
+    # retry_count 应 < MAX_RETRIES，使 retry job 能选到此记录重试
+    assert sub.retry_count < MAX_RETRIES
+    assert sub.retry_count == 1  # 初次失败后为 1，< MAX_RETRIES = 2
+
+
 def test_miniqmt_to_stock_code_sh_trading():
     """SH 交易代码 110xxx/113xxx → .SH 后缀。"""
     from app.brokers.miniqmt_adapter import MiniQMTBroker

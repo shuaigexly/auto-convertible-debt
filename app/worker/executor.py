@@ -11,7 +11,7 @@ from app.shared.models import Account, Subscription, SubscriptionStatus
 
 logger = logging.getLogger(__name__)
 
-MAX_RETRIES = 1
+MAX_RETRIES = 2  # Allow 1 retry (2 total attempts) per bond per day
 CIRCUIT_BREAK_THRESHOLD = 3
 
 
