@@ -6,7 +6,9 @@
 
 ## 一、可转债申购信息来源
 
-### 数据接口
+系统使用四个数据源交叉验证，≥2 个来源均有记录时自动标记为 `confirmed`，仅 1 个来源的进入 `pending` 等待人工确认。
+
+### 数据源一：AKShare 巨潮资讯（主力源）
 
 | 项目 | 内容 |
 |---|---|
@@ -32,6 +34,71 @@ print(df[['网上申购代码','债券简称','交易市场','网上申购数量
 核验点：
 - 输出的申购代码、债券名称与东方财富/集思录当日显示一致
 - `交易市场` 字段值为 `上交所` 或 `深交所`（非交易日输出为空 DataFrame 属正常）
+
+---
+
+### 数据源二：东方财富数据接口
+
+| 项目 | 内容 |
+|---|---|
+| 接口 | `https://datacenter-web.eastmoney.com/api/data/v1/get` |
+| 数据来源 | 东方财富网数据中心，无需 Token |
+| 申购日期字段 | `VALUE_DATE`（格式 `YYYY-MM-DD HH:MM:SS`，取日期部分） |
+| 申购代码字段 | `CORRECODE` |
+| 债券简称字段 | `SECURITY_NAME_ABBR` |
+
+**人工核验步骤：**
+
+```bash
+curl -s "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_BOND_CB_LIST&columns=ALL&sortColumns=PUBLIC_START_DATE&sortTypes=-1&pageSize=50&pageNumber=1&source=WEB&client=WEB" \
+  | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+rows = d.get('result', {}).get('data', []) or []
+for r in rows[:5]:
+    print(r.get('VALUE_DATE','')[:10], r.get('CORRECODE',''), r.get('SECURITY_NAME_ABBR',''))
+"
+```
+
+核验点：
+- 输出的 `CORRECODE`、`SECURITY_NAME_ABBR` 与巨潮资讯当日数据一致
+- `VALUE_DATE` 格式为 `YYYY-MM-DD HH:MM:SS`（系统取前 10 位做日期匹配）
+
+---
+
+### 数据源三：集思录数据接口
+
+| 项目 | 内容 |
+|---|---|
+| 接口 | `https://www.jisilu.cn/webapi/cb/pre/?history=N` |
+| 数据来源 | 集思录（jisilu.cn），专注可转债数据 |
+| 申购日期字段 | `apply_date`（格式 `YYYY-MM-DD`） |
+| 申购代码字段 | `apply_cd` |
+| 债券简称字段 | `bond_nm` |
+
+**人工核验步骤：**
+
+```bash
+curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.jisilu.cn/" \
+  "https://www.jisilu.cn/webapi/cb/pre/?history=N" \
+  | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+rows = d.get('data', []) or []
+for r in rows[:5]:
+    print(r.get('apply_date',''), r.get('apply_cd',''), r.get('bond_nm',''))
+"
+```
+
+核验点：
+- 输出的 `apply_cd`、`bond_nm` 与巨潮资讯当日数据一致
+- `apply_date` 为 `YYYY-MM-DD` 格式
+
+---
+
+### 数据源四：人工录入
+
+通过管理界面「快照」Tab 手动添加，用于补充其他数据源遗漏的债券。
 
 ---
 
@@ -135,13 +202,13 @@ cd /Users/jassionyang/cb-auto-subscribe
 python -m pytest tests/ -v
 ```
 
-预期结果：`41 passed`，无 ERROR。
+预期结果：`43 passed`，无 ERROR。
 
 测试覆盖范围：
 
 | 测试文件 | 覆盖内容 |
 |---|---|
-| `test_data_sources.py` | AKShare 抓取（含字段名核验）、ManualSource、聚合器 |
+| `test_data_sources.py` | AKShare 抓取（含字段名核验）、EastMoney 抓取、Jisilu 抓取、ManualSource、聚合器 |
 | `test_calendar.py` | 交易日判断、节假日、AKShare 日历加载 |
 | `test_crypto.py` | 加解密、密钥轮换 |
 | `test_executor.py` | 申购去重、结果记录 |
