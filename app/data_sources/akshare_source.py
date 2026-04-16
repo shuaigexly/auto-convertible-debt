@@ -11,15 +11,21 @@ class AKShareSource(DataSource):
     async def fetch(self, trade_date: date) -> list[BondInfo]:
         try:
             import akshare as ak
-            df = ak.bond_zh_cov(subscribe="1")  # subscribe=1: today's subscription bonds
+            date_str = trade_date.strftime("%Y%m%d")
+            df = ak.bond_cov_issue_cninfo(start_date=date_str, end_date=date_str)
             bonds = []
             for _, row in df.iterrows():
-                code = str(row.get("申购代码", "")).strip()
+                code = str(row.get("网上申购代码", "")).strip()
                 name = str(row.get("债券简称", "")).strip()
                 if not code:
                     continue
-                # SH subscription codes start with "7" (e.g. 754xxx); SZ codes start with "3" (e.g. 370xxx)
-                market = "SH" if code.startswith("7") else "SZ"
+                market_raw = str(row.get("交易市场", "")).strip()
+                if market_raw == "上交所":
+                    market = "SH"
+                elif market_raw == "深交所":
+                    market = "SZ"
+                else:
+                    market = "SH" if code.startswith("7") else "SZ"
                 bonds.append(BondInfo(
                     bond_code=code,
                     bond_name=name,

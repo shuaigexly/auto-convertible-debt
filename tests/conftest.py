@@ -8,7 +8,7 @@ from app.shared.db import Base
 import app.shared.models  # noqa
 
 TEST_DB_URL = os.environ.get(
-    "TEST_DATABASE_URL", "postgresql+asyncpg://cbuser:cbpass@localhost:5432/cbdb_test"
+    "TEST_DATABASE_URL", "sqlite+aiosqlite:///./test_cb.db"
 )
 
 
@@ -19,9 +19,15 @@ def event_loop():
     loop.close()
 
 
+def _engine_kwargs():
+    if TEST_DB_URL.startswith("sqlite"):
+        return {"connect_args": {"check_same_thread": False}}
+    return {}
+
+
 @pytest_asyncio.fixture(scope="session")
 async def db_engine():
-    engine = create_async_engine(TEST_DB_URL)
+    engine = create_async_engine(TEST_DB_URL, **_engine_kwargs())
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine
