@@ -14,7 +14,7 @@ _STATIC_HOLIDAYS_2025 = {
     date(2025, 1, 28), date(2025, 1, 29), date(2025, 1, 30),
     date(2025, 1, 31), date(2025, 2, 3), date(2025, 2, 4),  # Spring Festival
     date(2025, 4, 4),   # Qingming
-    date(2025, 5, 1), date(2025, 5, 2),  # Labour Day
+    date(2025, 5, 1), date(2025, 5, 2), date(2025, 5, 5),  # Labour Day
     date(2025, 5, 31), date(2025, 6, 2),  # Dragon Boat
     date(2025, 10, 1), date(2025, 10, 2), date(2025, 10, 3),
     date(2025, 10, 6), date(2025, 10, 7), date(2025, 10, 8),  # National Day
@@ -37,7 +37,7 @@ class CalendarService:
                 if isinstance(val, str):
                     trading.add(datetime.strptime(val, "%Y-%m-%d").date())
                 else:
-                    trading.add(val)
+                    trading.add(val.date() if hasattr(val, "date") else val)
             self._trading_days_from_akshare = trading
             logger.info("Loaded trading calendar from AKShare: %d days", len(self._trading_days_from_akshare))
         except Exception as e:
