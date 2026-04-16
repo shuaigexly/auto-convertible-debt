@@ -24,6 +24,5 @@ class EmailChannel(NotifyChannel):
             smtp.sendmail(self._username, self._to_addrs, mime.as_string())
 
     async def send(self, msg: NotifyMessage) -> None:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._send_sync, msg)
+        await asyncio.get_running_loop().run_in_executor(None, self._send_sync, msg)
         logger.info("Email notification sent: %s", msg.title)

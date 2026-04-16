@@ -17,5 +17,9 @@ class WechatChannel(NotifyChannel):
         }
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(self._url, json=payload)
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.error("WeChat webhook failed [%s]: %s", msg.title, exc)
+                raise
         logger.info("WeChat notification sent: %s", msg.title)

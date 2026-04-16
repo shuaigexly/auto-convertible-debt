@@ -13,11 +13,12 @@ def test_should_send_first_time():
     assert should_send(msg) is True
 
 
-def test_should_send_deduplicates_within_window():
+def test_should_send_no_write_without_send():
+    """should_send() alone does not write to cache — only send_deduped does."""
     _DEDUP_CACHE.clear()
-    msg = NotifyMessage(title="T2", body="B2")
+    msg = NotifyMessage(title="T2b", body="B2b")
     assert should_send(msg) is True
-    assert should_send(msg) is False  # duplicate
+    assert should_send(msg) is True  # still True because cache was not written
 
 
 def test_should_send_allows_after_window():
@@ -92,4 +93,20 @@ async def test_send_deduped_skips_duplicate():
     ch = _Ch("https://x")
     await ch.send_deduped(msg)
     await ch.send_deduped(msg)  # duplicate — should not call send again
+    assert send_spy.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_send_deduped_writes_cache_on_success():
+    _DEDUP_CACHE.clear()
+    msg = NotifyMessage(title="Dup2", body="Same2")
+    send_spy = AsyncMock()
+
+    class _Ch(FeishuChannel):
+        async def send(self, m):
+            await send_spy(m)
+
+    ch = _Ch("https://x")
+    await ch.send_deduped(msg)  # writes cache
+    await ch.send_deduped(msg)  # suppressed
     assert send_spy.call_count == 1

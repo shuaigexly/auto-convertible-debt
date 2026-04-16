@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from abc import ABC, abstractmethod
 import hashlib
+import threading
 
 @dataclass
 class NotifyMessage:
@@ -11,16 +12,21 @@ class NotifyMessage:
 
 _DEDUP_CACHE: dict[str, datetime] = {}
 _DEDUP_WINDOW = timedelta(minutes=30)
+_DEDUP_LOCK = threading.Lock()
+
+
+def _dedup_key(msg: NotifyMessage) -> str:
+    return hashlib.md5(f"{msg.title}{msg.body}".encode()).hexdigest()
+
 
 def should_send(msg: NotifyMessage) -> bool:
-    """Return True if message should be sent (not a duplicate within 30 min)."""
-    key = hashlib.md5(f"{msg.title}{msg.body}".encode()).hexdigest()
+    """Return True if message has not been sent within the dedup window."""
+    key = _dedup_key(msg)
     now = datetime.utcnow()
-    last = _DEDUP_CACHE.get(key)
-    if last and now - last < _DEDUP_WINDOW:
-        return False
-    _DEDUP_CACHE[key] = now
-    return True
+    with _DEDUP_LOCK:
+        last = _DEDUP_CACHE.get(key)
+        return not (last and now - last < _DEDUP_WINDOW)
+
 
 class NotifyChannel(ABC):
     @abstractmethod
@@ -29,6 +35,10 @@ class NotifyChannel(ABC):
         ...
 
     async def send_deduped(self, msg: NotifyMessage) -> None:
-        """Send only if not a duplicate within 30 min."""
-        if should_send(msg):
-            await self.send(msg)
+        """Send only if not a duplicate within 30 min. Records send only on success."""
+        if not should_send(msg):
+            return
+        await self.send(msg)
+        key = _dedup_key(msg)
+        with _DEDUP_LOCK:
+            _DEDUP_CACHE[key] = datetime.utcnow()

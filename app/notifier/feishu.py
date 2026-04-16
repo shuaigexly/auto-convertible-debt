@@ -22,5 +22,9 @@ class FeishuChannel(NotifyChannel):
         }
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(self._url, json=payload)
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.error("Feishu webhook failed [%s]: %s", msg.title, exc)
+                raise
         logger.info("Feishu notification sent: %s", msg.title)
