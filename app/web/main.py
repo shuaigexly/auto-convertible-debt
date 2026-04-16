@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 import os
 
-from app.worker.main import create_scheduler
 from app.web.api import accounts, config, history, trigger
 
 app = FastAPI(title="CB Auto Subscribe")
