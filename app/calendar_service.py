@@ -5,7 +5,6 @@ Falls back to a static list if AKShare is unavailable.
 """
 from datetime import date, timedelta
 import logging
-from unittest.mock import Mock
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +48,11 @@ _STATIC_HOLIDAYS = _STATIC_HOLIDAYS_2025 | _STATIC_HOLIDAYS_2026 | _STATIC_HOLID
 
 
 class CalendarService:
-    def __init__(self):
+    def __init__(self, akshare_enabled: bool = True):
         self._holidays: set[date] = set(_STATIC_HOLIDAYS)
         self._trading_days_from_akshare: set[date] | None = None
         self._akshare_loaded = False
-        self._akshare_enabled = not isinstance(getattr(type(self), "_try_load_from_akshare"), Mock)
+        self._akshare_enabled = akshare_enabled
 
     def _ensure_akshare_loaded(self):
         if self._akshare_loaded or self._trading_days_from_akshare is not None or not self._akshare_enabled:

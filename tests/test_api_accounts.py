@@ -176,6 +176,67 @@ async def test_delete_account_with_subscriptions_returns_409():
         app.dependency_overrides.clear()
 
 
+
+@pytest.mark.asyncio
+async def test_reset_circuit_success():
+    """reset-circuit 应将 circuit_broken 和 consecutive_failures 归零。"""
+    from app.shared.models import Account
+    from datetime import datetime
+
+    mock_account = MagicMock(spec=Account)
+    mock_account.id = 1
+    mock_account.name = "test"
+    mock_account.broker = "mock"
+    mock_account.enabled = True
+    mock_account.circuit_broken = True
+    mock_account.consecutive_failures = 5
+    mock_account.created_at = datetime(2025, 4, 16, 9, 0, 0)
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=mock_account)
+    mock_session.commit = AsyncMock()
+
+    async def mock_refresh(obj):
+        obj.circuit_broken = False
+        obj.consecutive_failures = 0
+
+    mock_session.refresh = mock_refresh
+
+    async def override_get_db():
+        yield mock_session
+
+    from app.shared.db import get_db
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.patch("/api/accounts/1/reset-circuit")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["circuit_broken"] is False
+        assert data["consecutive_failures"] == 0
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_reset_circuit_not_found():
+    """账户不存在时 reset-circuit 应返回 404。"""
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=None)
+
+    async def override_get_db():
+        yield mock_session
+
+    from app.shared.db import get_db
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.patch("/api/accounts/999/reset-circuit")
+        assert resp.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
 @pytest.mark.asyncio
 async def test_api_key_middleware_blocks_without_key(monkeypatch):
     """API_KEY 设置后，未携带 X-API-Key 的请求应返回 401。"""

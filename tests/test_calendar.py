@@ -6,8 +6,7 @@ from app.calendar_service import CalendarService
 
 def _make_svc_no_akshare():
     """CalendarService with AKShare disabled — uses static fallback only."""
-    with patch("app.calendar_service.CalendarService._try_load_from_akshare"):
-        return CalendarService()
+    return CalendarService(akshare_enabled=False)
 
 
 def test_weekend_is_not_trading_day():

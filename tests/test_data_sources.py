@@ -23,7 +23,7 @@ async def test_akshare_source_returns_bonds_on_success():
         results = await src.fetch(date(2025, 4, 16))
     assert len(results) == 1
     assert results[0].bond_code == "754321"
-    assert results[0].market == "SH"  # "754321" starts with "7" → SH
+    assert results[0].market == "SH"  # 交易市场="上交所" → SH
     assert results[0].source == "akshare"
 
 
