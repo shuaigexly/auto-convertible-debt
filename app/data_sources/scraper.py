@@ -12,40 +12,49 @@ class EastMoneySource(DataSource):
     name = "eastmoney"
 
     _url = "https://datacenter-web.eastmoney.com/api/data/v1/get"
-    _params = {
+    _base_params = {
         "reportName": "RPT_BOND_CB_LIST",
         "columns": "ALL",
         "sortColumns": "PUBLIC_START_DATE",
         "sortTypes": "-1",
         "pageSize": "50",
-        "pageNumber": "1",
         "source": "WEB",
         "client": "WEB",
     }
 
     async def fetch(self, trade_date: date) -> list[BondInfo]:
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(self._url, params=self._params)
-                response.raise_for_status()
-            payload = response.json()
-            rows = payload.get("result", {}).get("data", [])
             bonds = []
             trade_date_str = trade_date.isoformat()
-            for row in rows:
-                value_date = str(row.get("VALUE_DATE", "")).split(" ")[0]
-                if value_date != trade_date_str:
-                    continue
-                code = str(row.get("CORRECODE", "")).strip()
-                if not code:
-                    continue
-                bonds.append(BondInfo(
-                    bond_code=code,
-                    bond_name=str(row.get("SECURITY_NAME_ABBR", "")).strip(),
-                    market="SH" if code.startswith("7") else "SZ",
-                    trade_date=trade_date,
-                    source=self.name,
-                ))
+            page = 1
+            async with httpx.AsyncClient(timeout=10) as client:
+                while True:
+                    params = {**self._base_params, "pageNumber": str(page)}
+                    response = await client.get(self._url, params=params)
+                    response.raise_for_status()
+                    payload = response.json()
+                    result = payload.get("result") or {}
+                    rows = result.get("data") or []
+                    if not rows:
+                        break
+                    for row in rows:
+                        value_date = str(row.get("VALUE_DATE", "")).split(" ")[0]
+                        if value_date != trade_date_str:
+                            continue
+                        code = str(row.get("CORRECODE", "")).strip()
+                        if not code:
+                            continue
+                        bonds.append(BondInfo(
+                            bond_code=code,
+                            bond_name=str(row.get("SECURITY_NAME_ABBR", "")).strip(),
+                            market="SH" if code.startswith("7") else "SZ",
+                            trade_date=trade_date,
+                            source=self.name,
+                        ))
+                    pages = result.get("pages", 1)
+                    if page >= int(pages):
+                        break
+                    page += 1
             logger.info("EastMoney returned %d bonds for %s", len(bonds), trade_date)
             return bonds
         except Exception as e:

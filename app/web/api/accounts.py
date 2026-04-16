@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from app.shared.db import get_db
 from app.shared.models import Account
 from app.shared.schemas import AccountCreate, AccountOut
@@ -58,4 +59,11 @@ async def delete_account(account_id: int, session: AsyncSession = Depends(get_db
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     await session.delete(account)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete account with existing subscription records",
+        ) from None

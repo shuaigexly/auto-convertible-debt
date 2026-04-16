@@ -139,4 +139,4 @@ class TonghuashunBroker(BrokerAdapter):
             return orders
         except Exception as e:
             logger.warning("query_today_orders failed: %s", e)
-            return []
+            raise

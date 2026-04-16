@@ -13,11 +13,13 @@ router = APIRouter()
 @router.get("/subscriptions", response_model=list[SubscriptionOut])
 async def list_subscriptions(
     trade_date: Optional[date] = Query(None),
+    limit: int = Query(500, ge=1, le=1000),
     session: AsyncSession = Depends(get_db),
 ):
     stmt = select(Subscription)
     if trade_date:
         stmt = stmt.where(Subscription.trade_date == trade_date)
+    stmt = stmt.limit(limit)
     result = await session.execute(stmt)
     return result.scalars().all()
 
@@ -25,10 +27,12 @@ async def list_subscriptions(
 @router.get("/snapshots", response_model=list[BondSnapshotOut])
 async def list_snapshots(
     trade_date: Optional[date] = Query(None),
+    limit: int = Query(500, ge=1, le=1000),
     session: AsyncSession = Depends(get_db),
 ):
     stmt = select(BondSnapshot)
     if trade_date:
         stmt = stmt.where(BondSnapshot.trade_date == trade_date)
+    stmt = stmt.limit(limit)
     result = await session.execute(stmt)
     return result.scalars().all()

@@ -177,7 +177,7 @@ class MiniQMTBroker(BrokerAdapter):
             return orders
         except Exception as e:
             logger.warning("MiniQMT query_today_orders failed: %s", e)
-            return []
+            raise
 
     def _to_stock_code(self, bond_code: str) -> str:
         code = str(bond_code).strip().upper()

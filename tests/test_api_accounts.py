@@ -133,6 +133,49 @@ def test_account_create_valid_json():
     assert obj.credentials_plain == '{"user":"u","pass":"p"}'
 
 
+def test_account_create_invalid_broker():
+    """未知 broker 类型应触发 ValidationError。"""
+    from pydantic import ValidationError
+    from app.shared.schemas import AccountCreate
+
+    with pytest.raises(ValidationError, match="broker must be one of"):
+        AccountCreate(name="x", broker="unknown_broker", credentials_plain='{"k":"v"}')
+
+
+def test_account_create_valid_broker():
+    """合法 broker 名称应通过验证。"""
+    from app.shared.schemas import AccountCreate
+
+    for broker in ("mock", "miniqmt", "tonghuashun"):
+        obj = AccountCreate(name="x", broker=broker, credentials_plain='{"k":"v"}')
+        assert obj.broker == broker
+
+
+@pytest.mark.asyncio
+async def test_delete_account_with_subscriptions_returns_409():
+    """有申购记录时删除账户应返回 409。"""
+    from sqlalchemy.exc import IntegrityError as SAIntegrityError
+
+    mock_session = AsyncMock()
+    mock_account = MagicMock()
+    mock_session.get = AsyncMock(return_value=mock_account)
+    mock_session.delete = AsyncMock()
+    mock_session.commit = AsyncMock(side_effect=SAIntegrityError(None, None, Exception("fk")))
+    mock_session.rollback = AsyncMock()
+
+    async def override_get_db():
+        yield mock_session
+
+    from app.shared.db import get_db
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.delete("/api/accounts/1")
+        assert resp.status_code == 409
+    finally:
+        app.dependency_overrides.clear()
+
+
 @pytest.mark.asyncio
 async def test_api_key_middleware_blocks_without_key(monkeypatch):
     """API_KEY 设置后，未携带 X-API-Key 的请求应返回 401。"""

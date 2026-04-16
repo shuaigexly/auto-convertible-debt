@@ -3,11 +3,20 @@ import json
 from pydantic import BaseModel, field_validator
 from typing import Optional
 
+VALID_BROKERS = {"mock", "miniqmt", "tonghuashun"}
+
 
 class AccountCreate(BaseModel):
     name: str
     broker: str
     credentials_plain: str  # JSON string of plain credentials
+
+    @field_validator("broker")
+    @classmethod
+    def must_be_valid_broker(cls, v: str) -> str:
+        if v not in VALID_BROKERS:
+            raise ValueError(f"broker must be one of {sorted(VALID_BROKERS)}, got '{v}'")
+        return v
 
     @field_validator("credentials_plain")
     @classmethod

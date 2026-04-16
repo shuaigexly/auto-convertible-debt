@@ -24,6 +24,9 @@ def should_send(msg: NotifyMessage) -> bool:
     key = _dedup_key(msg)
     now = datetime.now(timezone.utc)
     with _DEDUP_LOCK:
+        expired = [cache_key for cache_key, sent_at in _DEDUP_CACHE.items() if now - sent_at >= _DEDUP_WINDOW]
+        for cache_key in expired:
+            del _DEDUP_CACHE[cache_key]
         last = _DEDUP_CACHE.get(key)
         return not (last and now - last < _DEDUP_WINDOW)
 
