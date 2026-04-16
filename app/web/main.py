@@ -1,10 +1,27 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from contextlib import asynccontextmanager
+import logging
 import os
 
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
+
+from app.shared.db import _get_engine
 from app.web.api import accounts, config, history, trigger
 
-app = FastAPI(title="CB Auto Subscribe")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if not os.environ.get("API_KEY"):
+        logging.getLogger(__name__).warning(
+            "API_KEY is not set — all non-public endpoints are UNPROTECTED"
+        )
+    try:
+        yield
+    finally:
+        await _get_engine().dispose()
+
+
+app = FastAPI(title="CB Auto Subscribe", lifespan=lifespan)
 
 _PUBLIC_PATHS = {"/", "/docs", "/openapi.json", "/redoc", "/health"}
 

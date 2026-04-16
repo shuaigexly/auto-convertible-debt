@@ -10,7 +10,9 @@ _session_factory = None
 def _get_engine():
     global _engine
     if _engine is None:
-        _engine = create_async_engine(os.environ["DATABASE_URL"], echo=False)
+        _engine = create_async_engine(
+            os.environ["DATABASE_URL"], echo=False, pool_pre_ping=True
+        )
     return _engine
 
 
