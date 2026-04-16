@@ -18,7 +18,8 @@ class AKShareSource(DataSource):
                 name = str(row.get("债券简称", "")).strip()
                 if not code:
                     continue
-                market = "SH" if code.startswith(("7", "1")) else "SZ"
+                # SH subscription codes start with "7" (e.g. 754xxx); SZ codes start with "3" (e.g. 370xxx)
+                market = "SH" if code.startswith("7") else "SZ"
                 bonds.append(BondInfo(
                     bond_code=code,
                     bond_name=name,

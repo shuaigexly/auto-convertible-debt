@@ -19,7 +19,7 @@ class ManualSource(DataSource):
             select(BondSnapshot).where(
                 BondSnapshot.trade_date == trade_date,
                 BondSnapshot.source == "manual",
-                BondSnapshot.confirmed == True,
+                BondSnapshot.confirmed.is_(True),
             )
         )
         rows = result.scalars().all()
