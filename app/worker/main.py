@@ -5,6 +5,7 @@ import json
 import logging
 from datetime import date
 
+from apscheduler.events import EVENT_JOB_ERROR
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
@@ -77,6 +78,7 @@ async def job_snapshot() -> None:
 async def job_warmup() -> None:
     today = date.today()
     if not calendar.is_trading_day(today):
+        logger.info("job_warmup: %s is not a trading day, skip", today)
         return
     async with _get_session_factory()() as session:
         result = await session.execute(select(Account).where(Account.enabled.is_(True)))
@@ -102,7 +104,7 @@ async def _run_subscribe(trade_date: date) -> None:
     async with _get_session_factory()() as session:
         result = await session.execute(select(Account).where(Account.enabled.is_(True)))
         accounts = result.scalars().all()
-        adapters = {account.id: _get_adapter(account) for account in accounts}
+        adapters = {a.id: _get_adapter(a) for a in accounts}
         snaps_result = await session.execute(
             select(BondSnapshot).where(
                 BondSnapshot.trade_date == trade_date,
@@ -112,21 +114,26 @@ async def _run_subscribe(trade_date: date) -> None:
         snaps = snaps_result.scalars().all()
         bonds = [
             BondInfo(
-                bond_code=snap.bond_code,
-                bond_name=snap.bond_name or "",
-                market=snap.market or "SZ",
+                bond_code=s.bond_code,
+                bond_name=s.bond_name or "",
+                market=s.market or "SZ",
                 trade_date=trade_date,
-                source=snap.source or "akshare",
+                source=s.source or "akshare",
             )
-            for snap in snaps
+            for s in snaps
         ]
         executor = Executor(session)
-        await executor.run_all_accounts(accounts, adapters, bonds, trade_date)
+        try:
+            await executor.run_all_accounts(accounts, adapters, bonds, trade_date)
+        except Exception as exc:
+            logger.error("_run_subscribe failed for %s: %s", trade_date, exc)
+            raise
 
 
 async def job_subscribe() -> None:
     today = date.today()
     if not calendar.is_trading_day(today):
+        logger.info("job_subscribe: %s is not a trading day, skip", today)
         return
     await _run_subscribe(today)
     logger.info("job_subscribe: done for %s", today)
@@ -135,6 +142,7 @@ async def job_subscribe() -> None:
 async def job_retry() -> None:
     today = date.today()
     if not calendar.is_trading_day(today):
+        logger.info("job_retry: %s is not a trading day, skip", today)
         return
     await _run_subscribe(today)
     logger.info("job_retry: done for %s", today)
@@ -143,20 +151,33 @@ async def job_retry() -> None:
 async def job_reconcile() -> None:
     today = date.today()
     if not calendar.is_trading_day(today):
+        logger.info("job_reconcile: %s is not a trading day, skip", today)
         return
     async with _get_session_factory()() as session:
         result = await session.execute(select(Account).where(Account.enabled.is_(True)))
         accounts = result.scalars().all()
-    for account in accounts:
-        adapter = _get_adapter(account)
-        async with _get_session_factory()() as session:
+        for account in accounts:
+            adapter = _get_adapter(account)
             reconciler = Reconciler(session)
-            await reconciler.reconcile_account(account, adapter, today)
+            try:
+                await reconciler.reconcile_account(account, adapter, today)
+            except Exception as exc:
+                logger.error("job_reconcile: failed for account %s: %s", account.id, exc)
     logger.info("job_reconcile: done for %s", today)
 
 
+def _on_job_error(event) -> None:
+    logger.error(
+        "Scheduler job [%s] failed: %s",
+        event.job_id,
+        event.exception,
+        exc_info=event.traceback,
+    )
+
+
 def create_scheduler() -> AsyncIOScheduler:
-    scheduler = AsyncIOScheduler()
+    scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
+    scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
     scheduler.add_job(job_snapshot, "cron", hour=8, minute=50, id="snapshot")
     scheduler.add_job(job_warmup, "cron", hour=9, minute=20, id="warmup")
     scheduler.add_job(job_subscribe, "cron", hour=9, minute=30, second=5, id="subscribe")
