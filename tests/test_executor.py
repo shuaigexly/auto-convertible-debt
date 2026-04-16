@@ -106,6 +106,45 @@ async def test_executor_session_expired_evicts_pool(db_session):
     assert account.id not in pool
 
 
+@pytest.mark.asyncio
+async def test_executor_risk_control_sets_retry_count_to_max(db_session):
+    """RISK_CONTROL 失败应将 retry_count 设为 MAX_RETRIES，防止 retry job 无限重试。"""
+    from app.shared.crypto import encrypt
+    from app.worker.executor import MAX_RETRIES
+    import os, json
+    os.environ.setdefault("ENCRYPTION_KEY", "dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=")
+    key = os.environ["ENCRYPTION_KEY"]
+    creds = encrypt(json.dumps({"exe_path": ""}), key)
+
+    account = Account(name="test_risk", broker="mock", credentials_enc=creds, enabled=True)
+    db_session.add(account)
+    await db_session.commit()
+    await db_session.refresh(account)
+
+    today = date(2025, 4, 16)
+    mock_adapter = MockBroker()
+    mock_adapter.subscribe_bond = AsyncMock(
+        return_value=SubscribeResult(code=SubscribeResultCode.RISK_CONTROL, message="risk control")
+    )
+    mock_adapter.query_today_orders = AsyncMock(return_value=[])
+
+    executor = Executor(session=db_session, dry_run=False)
+    bonds = [BondInfo("440001", "D债", "SH", today, "test")]
+    await executor.run_for_account(account, mock_adapter, bonds, today)
+
+    from sqlalchemy import select
+    result = await db_session.execute(
+        select(Subscription).where(
+            Subscription.account_id == account.id,
+            Subscription.bond_code == "440001",
+        )
+    )
+    sub = result.scalar_one_or_none()
+    assert sub is not None
+    assert sub.status == SubscriptionStatus.FAILED
+    assert sub.retry_count == MAX_RETRIES  # 非重试类失败不得被 retry job 再次选取
+
+
 def test_miniqmt_to_stock_code_sh_trading():
     """SH 交易代码 110xxx/113xxx → .SH 后缀。"""
     from app.brokers.miniqmt_adapter import MiniQMTBroker

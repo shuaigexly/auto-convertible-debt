@@ -166,6 +166,7 @@ class Executor:
         else:
             sub.status = SubscriptionStatus.FAILED
             sub.error = sub_result.message
+            sub.retry_count = MAX_RETRIES  # Prevent retry job from re-selecting non-retryable failures
             account.consecutive_failures += 1
             if account.consecutive_failures >= CIRCUIT_BREAK_THRESHOLD:
                 account.circuit_broken = True
