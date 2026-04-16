@@ -1,13 +1,13 @@
 from datetime import date, datetime
 import json
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 
 VALID_BROKERS = {"mock", "miniqmt", "tonghuashun"}
 
 
 class AccountCreate(BaseModel):
-    name: str
+    name: str = Field(..., max_length=100)
     broker: str
     credentials_plain: str  # JSON string of plain credentials
 

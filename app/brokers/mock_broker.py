@@ -1,5 +1,6 @@
 import logging
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from app.brokers.base import (
     BrokerAdapter, HealthStatus, Order, OrderStatus, SubscribeResult, SubscribeResultCode,
 )
@@ -41,7 +42,7 @@ class MockBroker(BrokerAdapter):
         logger.info("[DRY-RUN] Would subscribe %s × %d", bond_code, amount)
         self._orders.append(Order(
             bond_code=bond_code,
-            trade_date=date.today(),
+            trade_date=datetime.now(ZoneInfo("Asia/Shanghai")).date(),
             status=OrderStatus.PENDING,
             raw="mock",
         ))

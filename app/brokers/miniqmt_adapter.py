@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from app.brokers.base import (
     BrokerAdapter,
@@ -170,7 +171,7 @@ class MiniQMTBroker(BrokerAdapter):
                 status_code = int(getattr(item, "order_status", -1))
                 orders.append(Order(
                     bond_code=self._strip_market_suffix(stock_code),
-                    trade_date=date.today(),
+                    trade_date=datetime.now(ZoneInfo("Asia/Shanghai")).date(),
                     status=self._map_order_status(status_code),
                     raw=str(item),
                 ))

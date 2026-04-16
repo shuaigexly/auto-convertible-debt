@@ -1,7 +1,9 @@
 import logging
 from datetime import date
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.brokers.base import BrokerAdapter, OrderStatus
 from app.notifier.base import NotifyMessage
 from app.notifier.dispatcher import notify
@@ -40,6 +42,7 @@ class Reconciler:
             )
             subs = result.scalars().all()
 
+            pending_notifications: list[NotifyMessage] = []
             for sub in subs:
                 if sub.bond_code in submitted_codes:
                     sub.status = SubscriptionStatus.RECONCILED
@@ -53,13 +56,17 @@ class Reconciler:
                         "Bond %s not found in broker orders for account %s",
                         sub.bond_code, account.name,
                     )
-                    await notify(NotifyMessage(
-                        title=f"对账失败: {sub.bond_code}",
-                        body=f"账户 {account.name} 债券 {sub.bond_code} 未出现在券商委托记录中",
-                        level="warning",
-                    ))
+                    pending_notifications.append(
+                        NotifyMessage(
+                            title=f"对账失败: {sub.bond_code}",
+                            body=f"账户 {account.name} 债券 {sub.bond_code} 未出现在券商委托记录中",
+                            level="warning",
+                        )
+                    )
 
             await self._session.commit()
+            for message in pending_notifications:
+                await notify(message)
         except Exception:
             await self._session.rollback()
             raise

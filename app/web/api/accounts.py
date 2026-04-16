@@ -53,6 +53,18 @@ async def disable_account(account_id: int, session: AsyncSession = Depends(get_d
     return account
 
 
+@router.patch("/{account_id}/reset-circuit", response_model=AccountOut)
+async def reset_circuit(account_id: int, session: AsyncSession = Depends(get_db)):
+    account = await session.get(Account, account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    account.circuit_broken = False
+    account.consecutive_failures = 0
+    await session.commit()
+    await session.refresh(account)
+    return account
+
+
 @router.delete("/{account_id}", status_code=204)
 async def delete_account(account_id: int, session: AsyncSession = Depends(get_db)):
     account = await session.get(Account, account_id)

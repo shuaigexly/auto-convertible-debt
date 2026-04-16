@@ -7,7 +7,8 @@ For Docker, use a Playwright-based adapter instead.
 """
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from app.brokers.base import (
     BrokerAdapter, HealthStatus, Order, OrderStatus, SubscribeResult, SubscribeResultCode,
 )
@@ -132,7 +133,7 @@ class TonghuashunBroker(BrokerAdapter):
                     status = OrderStatus.UNKNOWN
                 orders.append(Order(
                     bond_code=str(row.get("证券代码", "")),
-                    trade_date=date.today(),
+                    trade_date=datetime.now(ZoneInfo("Asia/Shanghai")).date(),
                     status=status,
                     raw=str(row.to_dict()),
                 ))
