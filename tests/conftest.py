@@ -34,6 +34,6 @@ async def db_engine():
 async def db_session(db_engine):
     async with db_engine.connect() as conn:
         await conn.begin()
-        session = AsyncSession(bind=conn, expire_on_commit=False)
+        session = AsyncSession(conn, expire_on_commit=False)
         yield session
         await conn.rollback()
