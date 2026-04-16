@@ -30,7 +30,7 @@ class AKShareSource(DataSource):
                 elif market_raw == "深交所":
                     market = "SZ"
                 else:
-                    market = "SH" if code.startswith("7") else "SZ"
+                    market = "SH" if code.startswith(("110", "113")) else "SZ"
                 bonds.append(BondInfo(
                     bond_code=code,
                     bond_name=name,

@@ -47,7 +47,7 @@ class EastMoneySource(DataSource):
                         bonds.append(BondInfo(
                             bond_code=code,
                             bond_name=str(row.get("SECURITY_NAME_ABBR", "")).strip(),
-                            market="SH" if code.startswith("7") else "SZ",
+                            market="SH" if code.startswith(("110", "113")) else "SZ",
                             trade_date=trade_date,
                             source=self.name,
                         ))
@@ -91,10 +91,11 @@ class JisiluSource(DataSource):
                 code = str(row.get("apply_cd", "")).strip()
                 if not code:
                     continue
+                market_code = str(row.get("ration_cd", code)).strip() or code
                 bonds.append(BondInfo(
                     bond_code=code,
                     bond_name=str(row.get("bond_nm", "")).strip(),
-                    market="SH" if code.startswith("7") else "SZ",
+                    market="SH" if market_code.startswith(("110", "113")) else "SZ",
                     trade_date=trade_date,
                     source=self.name,
                 ))

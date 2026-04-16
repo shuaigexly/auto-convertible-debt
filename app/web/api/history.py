@@ -19,7 +19,7 @@ async def list_subscriptions(
     stmt = select(Subscription)
     if trade_date:
         stmt = stmt.where(Subscription.trade_date == trade_date)
-    stmt = stmt.limit(limit)
+    stmt = stmt.order_by(Subscription.trade_date.desc(), Subscription.id.desc()).limit(limit)
     result = await session.execute(stmt)
     return result.scalars().all()
 
@@ -33,6 +33,6 @@ async def list_snapshots(
     stmt = select(BondSnapshot)
     if trade_date:
         stmt = stmt.where(BondSnapshot.trade_date == trade_date)
-    stmt = stmt.limit(limit)
+    stmt = stmt.order_by(BondSnapshot.trade_date.desc(), BondSnapshot.id.desc()).limit(limit)
     result = await session.execute(stmt)
     return result.scalars().all()

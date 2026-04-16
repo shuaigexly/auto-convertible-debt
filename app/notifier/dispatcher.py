@@ -15,11 +15,30 @@ def _get_channels() -> list[NotifyChannel]:
     if _channels is not None:
         return _channels
     channels: list[NotifyChannel] = []
+
     feishu_url = os.environ.get("FEISHU_WEBHOOK_URL", "")
     if feishu_url:
         from app.notifier.feishu import FeishuChannel
 
         channels.append(FeishuChannel(feishu_url))
+
+    wechat_url = os.environ.get("WECHAT_WEBHOOK_URL", "")
+    if wechat_url:
+        from app.notifier.wechat import WechatChannel
+
+        channels.append(WechatChannel(wechat_url))
+
+    smtp_host = os.environ.get("SMTP_HOST", "")
+    if smtp_host:
+        from app.notifier.email_sender import EmailChannel
+
+        smtp_port = int(os.environ.get("SMTP_PORT", "465"))
+        smtp_user = os.environ.get("SMTP_USER", "")
+        smtp_pass = os.environ.get("SMTP_PASS", "")
+        notify_email_to = os.environ.get("NOTIFY_EMAIL_TO", "")
+        to_addrs = [addr.strip() for addr in notify_email_to.split(",") if addr.strip()]
+        channels.append(EmailChannel(smtp_host, smtp_port, smtp_user, smtp_pass, to_addrs))
+
     _channels = channels
     return _channels
 
