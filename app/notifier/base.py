@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from abc import ABC, abstractmethod
 import hashlib
 import threading
@@ -22,7 +22,7 @@ def _dedup_key(msg: NotifyMessage) -> str:
 def should_send(msg: NotifyMessage) -> bool:
     """Return True if message has not been sent within the dedup window."""
     key = _dedup_key(msg)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     with _DEDUP_LOCK:
         last = _DEDUP_CACHE.get(key)
         return not (last and now - last < _DEDUP_WINDOW)
@@ -41,4 +41,4 @@ class NotifyChannel(ABC):
         await self.send(msg)
         key = _dedup_key(msg)
         with _DEDUP_LOCK:
-            _DEDUP_CACHE[key] = datetime.utcnow()
+            _DEDUP_CACHE[key] = datetime.now(timezone.utc)

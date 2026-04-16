@@ -4,7 +4,7 @@ from app.notifier.base import NotifyMessage, should_send, _DEDUP_CACHE, _DEDUP_W
 from app.notifier.feishu import FeishuChannel
 from app.notifier.wechat import WechatChannel
 from app.notifier.email_sender import EmailChannel
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 def test_should_send_first_time():
@@ -27,7 +27,7 @@ def test_should_send_allows_after_window():
     import hashlib
     key = hashlib.md5(f"{msg.title}{msg.body}".encode()).hexdigest()
     # backdate the cache entry
-    _DEDUP_CACHE[key] = datetime.utcnow() - timedelta(minutes=31)
+    _DEDUP_CACHE[key] = datetime.now(timezone.utc) - timedelta(minutes=31)
     assert should_send(msg) is True
 
 

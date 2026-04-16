@@ -1,6 +1,6 @@
-import asyncio
 import os
 
+import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
@@ -12,20 +12,13 @@ TEST_DB_URL = os.environ.get(
 )
 
 
-@pytest_asyncio.fixture(scope="session")
-def event_loop():
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
 def _engine_kwargs():
     if TEST_DB_URL.startswith("sqlite"):
         return {"connect_args": {"check_same_thread": False}}
     return {}
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def db_engine():
     engine = create_async_engine(TEST_DB_URL, **_engine_kwargs())
     async with engine.begin() as conn:
@@ -36,7 +29,7 @@ async def db_engine():
     await engine.dispose()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="session")
 async def db_session(db_engine):
     async with db_engine.connect() as conn:
         await conn.begin()
