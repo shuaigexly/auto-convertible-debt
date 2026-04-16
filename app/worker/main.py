@@ -3,12 +3,14 @@
 import asyncio
 import json
 import logging
+import os
 from datetime import date
 
 from apscheduler.events import EVENT_JOB_ERROR
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
+from app.brokers.miniqmt_adapter import MiniQMTBroker
 from app.brokers.mock_broker import MockBroker
 from app.brokers.tongtongxin import TonghuashunBroker
 from app.calendar_service import CalendarService
@@ -19,7 +21,7 @@ from app.data_sources.manual_source import ManualSource
 from app.data_sources.scraper import EastMoneySource, JisiluSource
 from app.shared.crypto import decrypt, get_keys_from_env
 from app.shared.db import _get_session_factory
-from app.shared.models import Account, BondSnapshot
+from app.shared.models import Account, BondSnapshot, Subscription, SubscriptionStatus
 from app.worker.executor import Executor
 from app.worker.reconciler import Reconciler
 
@@ -30,6 +32,8 @@ calendar = CalendarService()
 def _get_adapter(account: Account):
     if account.broker == "mock":
         return MockBroker()
+    if account.broker == "miniqmt":
+        return MiniQMTBroker()
     return TonghuashunBroker()
 
 
@@ -105,8 +109,9 @@ async def job_warmup() -> None:
             logger.warning("job_warmup: login failed for account %s", account.id)
 
 
-async def _run_subscribe(trade_date: date) -> None:
-    """Inner subscribe logic, shared by job_subscribe and job_retry."""
+async def _run_subscribe(trade_date: date, retry_only: bool = False) -> None:
+    """Inner subscribe logic. retry_only=True 时只重试 FAILED+retryable 委托。"""
+    dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
     async with _get_session_factory()() as session:
         result = await session.execute(select(Account).where(Account.enabled.is_(True)))
         accounts = result.scalars().all()
@@ -118,6 +123,22 @@ async def _run_subscribe(trade_date: date) -> None:
             )
         )
         snaps = snaps_result.scalars().all()
+
+        if retry_only:
+            # 只保留本日有 FAILED 且 retryable 记录的债券代码
+            failed_result = await session.execute(
+                select(Subscription.bond_code).where(
+                    Subscription.trade_date == trade_date,
+                    Subscription.status == SubscriptionStatus.FAILED,
+                    Subscription.retry_count < 2,
+                ).distinct()
+            )
+            retryable_codes = {row[0] for row in failed_result.all()}
+            snaps = [s for s in snaps if s.bond_code in retryable_codes]
+            if not snaps:
+                logger.info("job_retry: no retryable failed subscriptions for %s", trade_date)
+                return
+
         bonds = [
             BondInfo(
                 bond_code=s.bond_code,
@@ -128,7 +149,7 @@ async def _run_subscribe(trade_date: date) -> None:
             )
             for s in snaps
         ]
-        executor = Executor(session)
+        executor = Executor(session, dry_run=dry_run)
         try:
             await executor.run_all_accounts(accounts, adapters, bonds, trade_date)
         except Exception as exc:
@@ -150,7 +171,7 @@ async def job_retry() -> None:
     if not calendar.is_trading_day(today):
         logger.info("job_retry: %s is not a trading day, skip", today)
         return
-    await _run_subscribe(today)
+    await _run_subscribe(today, retry_only=True)
     logger.info("job_retry: done for %s", today)
 
 
