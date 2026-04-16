@@ -163,6 +163,32 @@ async def test_eastmoney_source_detects_sh_market():
 
 
 @pytest.mark.asyncio
+async def test_jisilu_source_sh_bond_without_ration_cd():
+    """ration_cd 缺失时，apply_cd 以 730 开头的 SH 债应识别为 SH 市场。"""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "data": [
+            {
+                "apply_date": "2026-04-16",
+                "apply_cd": "730888",
+                "bond_nm": "沪市转债",
+                # ration_cd 字段缺失
+            },
+        ]
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
+        src = JisiluSource()
+        results = await src.fetch(date(2026, 4, 16))
+
+    assert len(results) == 1
+    assert results[0].bond_code == "730888"
+    assert results[0].market == "SH"
+
+
+@pytest.mark.asyncio
 async def test_jisilu_source_returns_bonds_on_success():
     mock_response = MagicMock()
     mock_response.json.return_value = {

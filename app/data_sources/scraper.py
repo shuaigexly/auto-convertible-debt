@@ -96,7 +96,7 @@ class JisiluSource(DataSource):
                 bonds.append(BondInfo(
                     bond_code=code,
                     bond_name=str(row.get("bond_nm", "")).strip(),
-                    market="SH" if market_code.startswith(("110", "113")) else "SZ",
+                    market="SH" if market_code.startswith(("110", "113", "730")) else "SZ",
                     trade_date=trade_date,
                     source=self.name,
                 ))
