@@ -113,8 +113,8 @@ class TonghuashunBroker(BrokerAdapter):
             )
 
     async def query_today_orders(self) -> list[Order]:
-        if not self._trader:
-            return []
+        if not self._trader or not self._logged_in:
+            raise RuntimeError("TonghuashunBroker not logged in, cannot query orders")
         try:
             loop = asyncio.get_running_loop()
             orders_df = await loop.run_in_executor(None, lambda: self._trader.today_entrusts)

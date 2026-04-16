@@ -183,7 +183,15 @@ class MiniQMTBroker(BrokerAdapter):
         code = str(bond_code).strip().upper()
         if "." in code:
             return code
-        market = "SH" if code.startswith("7") else "SZ"
+        if code.startswith(("110", "113")):
+            market = "SH"
+        elif code.startswith(("123", "128")):
+            market = "SZ"
+        else:
+            logger.warning(
+                "_to_stock_code: unrecognized bond code prefix %s, defaulting to SZ", code
+            )
+            market = "SZ"
         return f"{code}.{market}"
 
     def _strip_market_suffix(self, stock_code: str) -> str:
