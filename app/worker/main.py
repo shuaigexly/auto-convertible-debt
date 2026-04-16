@@ -22,6 +22,8 @@ from app.data_sources.akshare_source import AKShareSource
 from app.data_sources.base import BondInfo
 from app.data_sources.manual_source import ManualSource
 from app.data_sources.scraper import EastMoneySource, JisiluSource
+from app.notifier.base import NotifyMessage
+from app.notifier.dispatcher import notify
 from app.shared.crypto import decrypt, get_keys_from_env
 from app.shared.db import _get_engine, _get_session_factory
 from app.shared.models import Account, BondSnapshot, Subscription, SubscriptionStatus
@@ -121,6 +123,11 @@ async def job_warmup() -> None:
                 ok = await adapter.login(creds)
                 if not ok:
                     logger.warning("job_warmup: login failed for account %s", account.id)
+                    await notify(NotifyMessage(
+                        title=f"登录失败: 账户 {account.id}",
+                        body=f"job_warmup 账户 {account.id} ({account.broker}) 登录失败",
+                        level="warning",
+                    ))
                     continue
                 _adapter_pool[account.id] = adapter
                 logger.info("job_warmup: account %s logged in and pooled", account.id)

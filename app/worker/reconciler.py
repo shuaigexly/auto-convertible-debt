@@ -3,6 +3,8 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.brokers.base import BrokerAdapter, OrderStatus
+from app.notifier.base import NotifyMessage
+from app.notifier.dispatcher import notify
 from app.shared.models import Account, Subscription, SubscriptionStatus
 
 logger = logging.getLogger(__name__)
@@ -44,5 +46,10 @@ class Reconciler:
                     "Bond %s not found in broker orders for account %s",
                     sub.bond_code, account.name,
                 )
+                await notify(NotifyMessage(
+                    title=f"对账失败: {sub.bond_code}",
+                    body=f"账户 {account.name} 债券 {sub.bond_code} 未出现在券商委托记录中",
+                    level="warning",
+                ))
 
         await self._session.commit()

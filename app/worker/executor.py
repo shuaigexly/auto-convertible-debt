@@ -5,6 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.brokers.base import BrokerAdapter, SubscribeResultCode
 from app.data_sources.base import BondInfo
+from app.notifier.base import NotifyMessage
+from app.notifier.dispatcher import notify
 from app.shared.models import Account, Subscription, SubscriptionStatus
 
 logger = logging.getLogger(__name__)
@@ -135,6 +137,21 @@ class Executor:
                 if account.consecutive_failures >= CIRCUIT_BREAK_THRESHOLD:
                     account.circuit_broken = True
                     logger.error("Circuit broken for account %s", account.name)
+                    await notify(NotifyMessage(
+                        title=f"Circuit Break: {account.name}",
+                        body=(
+                            f"Account {account.name} circuit broken after "
+                            f"{CIRCUIT_BREAK_THRESHOLD} consecutive failures. "
+                            f"Last error: {sub_result.message}"
+                        ),
+                        level="error",
+                    ))
+                else:
+                    await notify(NotifyMessage(
+                        title=f"订阅失败: {bond.bond_code}",
+                        body=f"账户 {account.name} 订阅 {bond.bond_code} 失败: {sub_result.message}",
+                        level="warning",
+                    ))
         elif sub_result.retryable and sub.retry_count < MAX_RETRIES:
             sub.status = SubscriptionStatus.UNKNOWN
             sub.error = sub_result.message
@@ -146,6 +163,21 @@ class Executor:
             if account.consecutive_failures >= CIRCUIT_BREAK_THRESHOLD:
                 account.circuit_broken = True
                 logger.error("Circuit broken for account %s", account.name)
+                await notify(NotifyMessage(
+                    title=f"Circuit Break: {account.name}",
+                    body=(
+                        f"Account {account.name} circuit broken after "
+                        f"{CIRCUIT_BREAK_THRESHOLD} consecutive failures. "
+                        f"Last error: {sub_result.message}"
+                    ),
+                    level="error",
+                ))
+            else:
+                await notify(NotifyMessage(
+                    title=f"订阅失败: {bond.bond_code}",
+                    body=f"账户 {account.name} 订阅 {bond.bond_code} 失败: {sub_result.message}",
+                    level="warning",
+                ))
 
         await self._session.commit()
         logger.info(
