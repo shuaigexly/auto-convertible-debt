@@ -32,7 +32,19 @@ _STATIC_HOLIDAYS_2026 = {
     date(2026, 10, 6), date(2026, 10, 7), date(2026, 10, 8),  # National Day
 }
 
-_STATIC_HOLIDAYS = _STATIC_HOLIDAYS_2025 | _STATIC_HOLIDAYS_2026
+# 2027 A-share public holidays (weekday-only fallback; official schedule may vary)
+_STATIC_HOLIDAYS_2027 = {
+    date(2027, 1, 1),   # New Year
+    date(2027, 2, 8), date(2027, 2, 9), date(2027, 2, 10),
+    date(2027, 2, 11), date(2027, 2, 12), date(2027, 2, 15),  # Spring Festival (tentative)
+    date(2027, 4, 5),   # Qingming
+    date(2027, 5, 3), date(2027, 5, 4), date(2027, 5, 5),  # Labour Day
+    date(2027, 5, 28),  # Dragon Boat (tentative)
+    date(2027, 10, 1), date(2027, 10, 4), date(2027, 10, 5),
+    date(2027, 10, 6), date(2027, 10, 7),  # National Day
+}
+
+_STATIC_HOLIDAYS = _STATIC_HOLIDAYS_2025 | _STATIC_HOLIDAYS_2026 | _STATIC_HOLIDAYS_2027
 
 
 class CalendarService:
