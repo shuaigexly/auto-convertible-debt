@@ -5,7 +5,8 @@ import json
 import logging
 import os
 import signal
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from apscheduler.events import EVENT_JOB_ERROR
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -32,6 +33,7 @@ from app.worker.reconciler import Reconciler
 
 logger = logging.getLogger(__name__)
 calendar = CalendarService()
+_TZ_SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 # Module-level adapter pool: account_id → logged-in BrokerAdapter
 # Populated by job_warmup; consumed by _run_subscribe.
@@ -43,7 +45,9 @@ def _get_adapter(account: Account) -> BrokerAdapter:
         return MockBroker()
     if account.broker == "miniqmt":
         return MiniQMTBroker()
-    return TonghuashunBroker()
+    if account.broker == "tonghuashun":
+        return TonghuashunBroker()
+    raise ValueError(f"Unknown broker: {account.broker!r} for account {account.id}")
 
 
 def _decrypt_creds(account: Account) -> dict:
@@ -53,7 +57,7 @@ def _decrypt_creds(account: Account) -> dict:
 
 
 async def job_snapshot() -> None:
-    today = date.today()
+    today = datetime.now(_TZ_SHANGHAI).date()
     if not calendar.is_trading_day(today):
         logger.info("job_snapshot: %s is not a trading day, skip", today)
         return
@@ -76,7 +80,13 @@ async def job_snapshot() -> None:
                     BondSnapshot.source == bond.source,
                 )
             )
-            if existing.scalars().first() is not None:
+            existing_snap = existing.scalars().first()
+            if existing_snap is not None:
+                if not existing_snap.confirmed and is_confirmed:
+                    existing_snap.confirmed = True
+                    existing_snap.bond_name = bond.bond_name or existing_snap.bond_name
+                    existing_snap.market = bond.market or existing_snap.market
+                    saved += 1
                 continue
             snap = BondSnapshot(
                 trade_date=today,
@@ -101,7 +111,7 @@ async def job_snapshot() -> None:
 
 
 async def job_warmup() -> None:
-    today = date.today()
+    today = datetime.now(_TZ_SHANGHAI).date()
     if not calendar.is_trading_day(today):
         logger.info("job_warmup: %s is not a trading day, skip", today)
         return
@@ -149,7 +159,15 @@ async def _run_subscribe(trade_date: date, retry_only: bool = False) -> None:
             adapter = _adapter_pool.get(a.id)
             if adapter is None or not adapter.check_session():
                 adapter = _get_adapter(a)
-                creds = _decrypt_creds(a)
+                try:
+                    creds = _decrypt_creds(a)
+                except Exception as exc:
+                    logger.error(
+                        "_run_subscribe: failed to decrypt credentials for account %s: %s",
+                        a.id,
+                        exc,
+                    )
+                    continue
                 ok = await adapter.login(creds)
                 if ok:
                     _adapter_pool[a.id] = adapter
@@ -201,7 +219,7 @@ async def _run_subscribe(trade_date: date, retry_only: bool = False) -> None:
 
 
 async def job_subscribe() -> None:
-    today = date.today()
+    today = datetime.now(_TZ_SHANGHAI).date()
     if not calendar.is_trading_day(today):
         logger.info("job_subscribe: %s is not a trading day, skip", today)
         return
@@ -210,7 +228,7 @@ async def job_subscribe() -> None:
 
 
 async def job_retry() -> None:
-    today = date.today()
+    today = datetime.now(_TZ_SHANGHAI).date()
     if not calendar.is_trading_day(today):
         logger.info("job_retry: %s is not a trading day, skip", today)
         return
@@ -219,7 +237,7 @@ async def job_retry() -> None:
 
 
 async def job_reconcile() -> None:
-    today = date.today()
+    today = datetime.now(_TZ_SHANGHAI).date()
     if not calendar.is_trading_day(today):
         logger.info("job_reconcile: %s is not a trading day, skip", today)
         return
@@ -232,7 +250,15 @@ async def job_reconcile() -> None:
             adapter = _adapter_pool.get(account.id)
             if adapter is None or not adapter.check_session():
                 adapter = _get_adapter(account)
-                creds = _decrypt_creds(account)
+                try:
+                    creds = _decrypt_creds(account)
+                except Exception as exc:
+                    logger.error(
+                        "job_reconcile: failed to decrypt credentials for account %s: %s",
+                        account.id,
+                        exc,
+                    )
+                    continue
                 ok = await adapter.login(creds)
                 if ok:
                     _adapter_pool[account.id] = adapter
@@ -296,6 +322,13 @@ async def main() -> None:
         stop_event.set()
     finally:
         scheduler.shutdown()
+        for acc_id, adapter in list(_adapter_pool.items()):
+            try:
+                adapter.logout()
+                logger.info("main: logged out adapter for account %s", acc_id)
+            except Exception as exc:
+                logger.warning("main: logout failed for account %s: %s", acc_id, exc)
+        _adapter_pool.clear()
         await _get_engine().dispose()
         try:
             loop.remove_signal_handler(signal.SIGTERM)
