@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.brokers.base import BrokerAdapter, SubscribeResultCode
@@ -75,13 +75,26 @@ class Executor:
             )
         )
         existing_sub = result.scalar_one_or_none()
-        if existing_sub and existing_sub.status in (
-            SubscriptionStatus.SUBMITTED,
-            SubscriptionStatus.RECONCILED,
-            SubscriptionStatus.SKIPPED,
-        ):
-            logger.info("Skip %s for account %s (already %s)", bond.bond_code, account.name, existing_sub.status)
-            return
+        if existing_sub:
+            if existing_sub.status in (
+                SubscriptionStatus.SUBMITTED,
+                SubscriptionStatus.RECONCILED,
+                SubscriptionStatus.SKIPPED,
+            ):
+                logger.info("Skip %s for account %s (already %s)", bond.bond_code, account.name, existing_sub.status)
+                return
+            if existing_sub.status == SubscriptionStatus.SUBMITTING:
+                age = datetime.now(timezone.utc) - existing_sub.created_at.replace(tzinfo=timezone.utc)
+                if age < timedelta(minutes=5):
+                    logger.info(
+                        "Skip %s for account %s (SUBMITTING, age=%s, likely in-flight)",
+                        bond.bond_code, account.name, age,
+                    )
+                    return
+                logger.warning(
+                    "Stale SUBMITTING record for %s account %s (age=%s), retrying",
+                    bond.bond_code, account.name, age,
+                )
 
         # Idempotency: check broker-side orders
         if bond.bond_code in existing_codes:
