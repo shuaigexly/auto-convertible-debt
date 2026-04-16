@@ -31,9 +31,9 @@ def decrypt(token: str, primary_key: str, old_key: str | None = None) -> str:
 
 
 def rotate_key(token: str, old_key: str, new_key: str) -> str:
-    """Re-encrypt token under new_key."""
-    plaintext = decrypt(token, primary_key=old_key)
-    return encrypt(plaintext, primary_key=new_key)
+    """Re-encrypt token under new_key without exposing plaintext."""
+    mf = MultiFernet([_make_fernet(new_key), _make_fernet(old_key)])
+    return mf.rotate(token.encode()).decode()
 
 
 def get_keys_from_env() -> tuple[str, str | None]:
