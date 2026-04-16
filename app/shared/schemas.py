@@ -1,0 +1,58 @@
+from datetime import date, datetime
+from pydantic import BaseModel
+from typing import Optional
+
+
+class AccountCreate(BaseModel):
+    name: str
+    broker: str
+    credentials_plain: str  # JSON string of plain credentials
+
+
+class AccountOut(BaseModel):
+    id: int
+    name: str
+    broker: str
+    enabled: bool
+    circuit_broken: bool
+    consecutive_failures: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class BondSnapshotOut(BaseModel):
+    id: int
+    trade_date: date
+    bond_code: str
+    bond_name: Optional[str]
+    market: Optional[str]
+    source: Optional[str]
+    confirmed: bool
+
+    model_config = {"from_attributes": True}
+
+
+class SubscriptionOut(BaseModel):
+    id: int
+    trade_date: date
+    bond_code: str
+    bond_name: Optional[str]
+    account_id: int
+    status: str
+    error: Optional[str]
+    retry_count: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConfigEntryOut(BaseModel):
+    key: str
+    value: str
+
+    model_config = {"from_attributes": True}
+
+
+class ConfigEntryCreate(BaseModel):
+    value: str
