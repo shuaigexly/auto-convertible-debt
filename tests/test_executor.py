@@ -104,3 +104,33 @@ async def test_executor_session_expired_evicts_pool(db_session):
 
     # Pool entry should have been cleared
     assert account.id not in pool
+
+
+def test_miniqmt_to_stock_code_sh_trading():
+    """SH 交易代码 110xxx/113xxx → .SH 后缀。"""
+    from app.brokers.miniqmt_adapter import MiniQMTBroker
+    b = MiniQMTBroker()
+    assert b._to_stock_code("110001") == "110001.SH"
+    assert b._to_stock_code("113001") == "113001.SH"
+
+
+def test_miniqmt_to_stock_code_sz_trading():
+    """SZ 交易代码 123xxx/128xxx → .SZ 后缀。"""
+    from app.brokers.miniqmt_adapter import MiniQMTBroker
+    b = MiniQMTBroker()
+    assert b._to_stock_code("123001") == "123001.SZ"
+    assert b._to_stock_code("128001") == "128001.SZ"
+
+
+def test_miniqmt_to_stock_code_sh_subscription():
+    """SH 申购代码 730xxx → .SH 后缀（修复前会错误路由到 .SZ）。"""
+    from app.brokers.miniqmt_adapter import MiniQMTBroker
+    b = MiniQMTBroker()
+    assert b._to_stock_code("730888") == "730888.SH"
+
+
+def test_miniqmt_to_stock_code_already_suffixed():
+    """已带市场后缀时直接返回。"""
+    from app.brokers.miniqmt_adapter import MiniQMTBroker
+    b = MiniQMTBroker()
+    assert b._to_stock_code("110001.SH") == "110001.SH"

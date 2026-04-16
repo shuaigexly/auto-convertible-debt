@@ -184,10 +184,12 @@ class MiniQMTBroker(BrokerAdapter):
         code = str(bond_code).strip().upper()
         if "." in code:
             return code
-        if code.startswith(("110", "113")):
+        if code.startswith(("110", "113")):   # SH trading code
             market = "SH"
-        elif code.startswith(("123", "128")):
+        elif code.startswith(("123", "128")):  # SZ trading code
             market = "SZ"
+        elif code.startswith("730"):           # SH subscription code (申购代码)
+            market = "SH"
         else:
             logger.warning(
                 "_to_stock_code: unrecognized bond code prefix %s, defaulting to SZ", code
