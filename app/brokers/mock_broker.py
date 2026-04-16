@@ -1,7 +1,7 @@
 import logging
 from datetime import date
 from app.brokers.base import (
-    BrokerAdapter, HealthStatus, Order, SubscribeResult, SubscribeResultCode,
+    BrokerAdapter, HealthStatus, Order, OrderStatus, SubscribeResult, SubscribeResultCode,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ class MockBroker(BrokerAdapter):
         self._orders.append(Order(
             bond_code=bond_code,
             trade_date=date.today(),
-            status="委托中",
+            status=OrderStatus.PENDING,
             raw="mock",
         ))
         return SubscribeResult(code=SubscribeResultCode.SUCCESS, message="dry-run success")

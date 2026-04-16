@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
+from typing import ClassVar
 
 
 class SubscribeResultCode(str, Enum):
@@ -28,11 +29,18 @@ class SubscribeResult:
         )
 
 
+class OrderStatus(str, Enum):
+    PENDING = "委托中"
+    FILLED = "已成交"
+    CANCELLED = "已撤销"
+    UNKNOWN = "未知"
+
+
 @dataclass
 class Order:
     bond_code: str
     trade_date: date
-    status: str  # "委托中" / "已成交" / "已撤销"
+    status: OrderStatus
     raw: str = ""
 
 
@@ -43,7 +51,12 @@ class HealthStatus:
 
 
 class BrokerAdapter(ABC):
-    broker_name: str = "base"
+    broker_name: ClassVar[str] = "base"
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        if not getattr(cls, "__abstractmethods__", None) and cls.broker_name == "base":
+            raise TypeError(f"{cls.__name__} must define broker_name class attribute")
 
     @abstractmethod
     def check_session(self) -> bool:
