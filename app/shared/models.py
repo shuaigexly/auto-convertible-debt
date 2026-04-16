@@ -22,7 +22,7 @@ class Account(Base):
     __tablename__ = "accounts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     broker: Mapped[str] = mapped_column(String(50), nullable=False)
     credentials_enc: Mapped[str] = mapped_column(Text, nullable=False)  # MultiFernet encrypted JSON
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

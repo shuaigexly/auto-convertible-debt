@@ -158,7 +158,13 @@ async def _run_subscribe(trade_date: date, retry_only: bool = False) -> None:
         for a in accounts:
             adapter = _adapter_pool.get(a.id)
             if adapter is None or not adapter.check_session():
-                adapter = _get_adapter(a)
+                try:
+                    adapter = _get_adapter(a)
+                except ValueError as exc:
+                    logger.error(
+                        "_run_subscribe: unknown broker for account %s: %s", a.id, exc
+                    )
+                    continue
                 try:
                     creds = _decrypt_creds(a)
                 except Exception as exc:
@@ -249,7 +255,13 @@ async def job_reconcile() -> None:
             # Reuse pooled (logged-in) adapter; fall back to fresh login if missing.
             adapter = _adapter_pool.get(account.id)
             if adapter is None or not adapter.check_session():
-                adapter = _get_adapter(account)
+                try:
+                    adapter = _get_adapter(account)
+                except ValueError as exc:
+                    logger.error(
+                        "job_reconcile: unknown broker for account %s: %s", account.id, exc
+                    )
+                    continue
                 try:
                     creds = _decrypt_creds(account)
                 except Exception as exc:

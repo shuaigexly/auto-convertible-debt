@@ -37,7 +37,8 @@ def _get_channels() -> list[NotifyChannel]:
         smtp_pass = os.environ.get("SMTP_PASS", "")
         notify_email_to = os.environ.get("NOTIFY_EMAIL_TO", "")
         to_addrs = [addr.strip() for addr in notify_email_to.split(",") if addr.strip()]
-        channels.append(EmailChannel(smtp_host, smtp_port, smtp_user, smtp_pass, to_addrs))
+        if to_addrs:
+            channels.append(EmailChannel(smtp_host, smtp_port, smtp_user, smtp_pass, to_addrs))
 
     _channels = channels
     return _channels

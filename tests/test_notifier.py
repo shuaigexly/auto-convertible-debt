@@ -7,28 +7,31 @@ from app.notifier.email_sender import EmailChannel
 from datetime import datetime, timedelta, timezone
 
 
-def test_should_send_first_time():
+@pytest.mark.asyncio
+async def test_should_send_first_time():
     _DEDUP_CACHE.clear()
     msg = NotifyMessage(title="T1", body="B1")
-    assert should_send(msg) is True
+    assert await should_send(msg) is True
 
 
-def test_should_send_no_write_without_send():
+@pytest.mark.asyncio
+async def test_should_send_no_write_without_send():
     """should_send() alone does not write to cache — only send_deduped does."""
     _DEDUP_CACHE.clear()
     msg = NotifyMessage(title="T2b", body="B2b")
-    assert should_send(msg) is True
-    assert should_send(msg) is True  # still True because cache was not written
+    assert await should_send(msg) is True
+    assert await should_send(msg) is True  # still True because cache was not written
 
 
-def test_should_send_allows_after_window():
+@pytest.mark.asyncio
+async def test_should_send_allows_after_window():
     _DEDUP_CACHE.clear()
     msg = NotifyMessage(title="T3", body="B3")
     import hashlib
-    key = hashlib.md5(f"{msg.title}{msg.body}".encode()).hexdigest()
+    key = hashlib.md5(f"{msg.title}{msg.body}".encode(), usedforsecurity=False).hexdigest()
     # backdate the cache entry
     _DEDUP_CACHE[key] = datetime.now(timezone.utc) - timedelta(minutes=31)
-    assert should_send(msg) is True
+    assert await should_send(msg) is True
 
 
 @pytest.mark.asyncio

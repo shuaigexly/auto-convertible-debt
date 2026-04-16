@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from abc import ABC, abstractmethod
+import asyncio
 import hashlib
-import threading
 
 @dataclass
 class NotifyMessage:
@@ -12,18 +12,18 @@ class NotifyMessage:
 
 _DEDUP_CACHE: dict[str, datetime] = {}
 _DEDUP_WINDOW = timedelta(minutes=30)
-_DEDUP_LOCK = threading.Lock()
+_DEDUP_LOCK = asyncio.Lock()
 
 
 def _dedup_key(msg: NotifyMessage) -> str:
-    return hashlib.md5(f"{msg.title}{msg.body}".encode()).hexdigest()
+    return hashlib.md5(f"{msg.title}{msg.body}".encode(), usedforsecurity=False).hexdigest()
 
 
-def should_send(msg: NotifyMessage) -> bool:
+async def should_send(msg: NotifyMessage) -> bool:
     """Return True if message has not been sent within the dedup window."""
     key = _dedup_key(msg)
     now = datetime.now(timezone.utc)
-    with _DEDUP_LOCK:
+    async with _DEDUP_LOCK:
         expired = [cache_key for cache_key, sent_at in _DEDUP_CACHE.items() if now - sent_at >= _DEDUP_WINDOW]
         for cache_key in expired:
             del _DEDUP_CACHE[cache_key]
@@ -39,9 +39,9 @@ class NotifyChannel(ABC):
 
     async def send_deduped(self, msg: NotifyMessage) -> None:
         """Send only if not a duplicate within 30 min. Records send only on success."""
-        if not should_send(msg):
+        if not await should_send(msg):
             return
         await self.send(msg)
         key = _dedup_key(msg)
-        with _DEDUP_LOCK:
+        async with _DEDUP_LOCK:
             _DEDUP_CACHE[key] = datetime.now(timezone.utc)
