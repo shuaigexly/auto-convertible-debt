@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from app.data_sources.base import BondInfo, DataSource
 from app.data_sources.akshare_source import AKShareSource
 from app.data_sources.manual_source import ManualSource
+from app.data_sources.scraper import EastMoneySource, JisiluSource
 
 _MOCK_AKSHARE = MagicMock()
 
@@ -96,3 +97,69 @@ async def test_aggregator_sends_single_source_to_pending():
     confirmed, pending = await agg.aggregate(date(2025, 4, 16))
     assert not any(b.bond_code == "654321" for b in confirmed)
     assert any(b.bond_code == "654321" for b in pending)
+
+
+@pytest.mark.asyncio
+async def test_eastmoney_source_returns_bonds_on_success():
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "result": {
+            "data": [
+                {
+                    "VALUE_DATE": "2026-04-16 00:00:00",
+                    "CORRECODE": "371210",
+                    "SECURITY_NAME_ABBR": "金杨转债",
+                    "BOND_CODE": "123210",
+                },
+                {
+                    "VALUE_DATE": "2026-04-15 00:00:00",
+                    "CORRECODE": "754321",
+                    "SECURITY_NAME_ABBR": "非当日转债",
+                    "BOND_CODE": "113210",
+                },
+            ]
+        }
+    }
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
+        src = EastMoneySource()
+        results = await src.fetch(date(2026, 4, 16))
+
+    assert len(results) == 1
+    assert results[0].bond_code == "371210"
+    assert results[0].bond_name == "金杨转债"
+    assert results[0].market == "SZ"
+    assert results[0].source == "eastmoney"
+
+
+@pytest.mark.asyncio
+async def test_jisilu_source_returns_bonds_on_success():
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "data": [
+            {
+                "apply_date": "2026-04-16",
+                "apply_cd": "754321",
+                "bond_nm": "测试转债",
+                "ration_cd": "113210",
+            },
+            {
+                "apply_date": "2026-04-15",
+                "apply_cd": "371210",
+                "bond_nm": "非当日转债",
+                "ration_cd": "123210",
+            },
+        ]
+    }
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
+        src = JisiluSource()
+        results = await src.fetch(date(2026, 4, 16))
+
+    assert len(results) == 1
+    assert results[0].bond_code == "754321"
+    assert results[0].bond_name == "测试转债"
+    assert results[0].market == "SH"
+    assert results[0].source == "jisilu"

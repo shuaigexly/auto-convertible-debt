@@ -16,6 +16,7 @@ from app.data_sources.aggregator import BondAggregator
 from app.data_sources.akshare_source import AKShareSource
 from app.data_sources.base import BondInfo
 from app.data_sources.manual_source import ManualSource
+from app.data_sources.scraper import EastMoneySource, JisiluSource
 from app.shared.crypto import decrypt, get_keys_from_env
 from app.shared.db import _get_session_factory
 from app.shared.models import Account, BondSnapshot
@@ -44,7 +45,12 @@ async def job_snapshot() -> None:
         logger.info("job_snapshot: %s is not a trading day, skip", today)
         return
     async with _get_session_factory()() as session:
-        sources = [AKShareSource(), ManualSource(session)]
+        sources = [
+            AKShareSource(),
+            EastMoneySource(),
+            JisiluSource(),
+            ManualSource(session),
+        ]
         agg = BondAggregator(sources)
         confirmed, pending = await agg.aggregate(today)
         for bond in confirmed:
