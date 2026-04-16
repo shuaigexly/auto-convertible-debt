@@ -12,7 +12,7 @@ def test_encrypt_decrypt_roundtrip():
 
 def test_decrypt_with_wrong_key_raises():
     key1 = "dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
-    key2 = "YW5vdGhlcmtleWFub3RoZXJrZXlhbm90aGVya2V5YQ=="
+    key2 = "r1AWx9d4ppxxuV1RvmYxTJSHCffYXWLFXuq5gDR6P00="
     token = encrypt("secret", key1)
     with pytest.raises(Exception):
         decrypt(token, key2)
@@ -20,7 +20,7 @@ def test_decrypt_with_wrong_key_raises():
 
 def test_rotate_key_allows_decrypt_with_new_key():
     old_key = "dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
-    new_key = "bmV3a2V5bmV3a2V5bmV3a2V5bmV3a2V5bmV3a2V5bm=="
+    new_key = "ywZ53HGIeODB9VD65LEDOBvO8MiumvfajqRFbqj9_3g="
     token = encrypt("secret", old_key)
     rotated = rotate_key(token, old_key=old_key, new_key=new_key)
     assert decrypt(rotated, new_key) == "secret"

@@ -1,5 +1,3 @@
-import base64
-import hashlib
 import os
 from cryptography.fernet import Fernet, MultiFernet, InvalidToken
 
@@ -7,12 +5,11 @@ from cryptography.fernet import Fernet, MultiFernet, InvalidToken
 def _make_fernet(key: str) -> Fernet:
     try:
         return Fernet(key.encode())
-    except Exception:
-        padded = key + "=" * (-len(key) % 4)
-        raw_key = base64.urlsafe_b64decode(padded)
-        if len(raw_key) != 32:
-            raw_key = hashlib.sha256(raw_key).digest()
-        return Fernet(base64.urlsafe_b64encode(raw_key))
+    except Exception as exc:
+        raise ValueError(
+            "Invalid Fernet key: must be URL-safe base64-encoded 32 bytes. "
+            "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        ) from exc
 
 
 def encrypt(plaintext: str, primary_key: str, old_key: str | None = None) -> str:
