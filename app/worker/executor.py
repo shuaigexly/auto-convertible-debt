@@ -27,11 +27,9 @@ class Executor:
         adapters: dict[int, BrokerAdapter],
         bonds: list[BondInfo],
         trade_date: date,
-        max_concurrent: int = 1,
     ) -> None:
-        # max_concurrent defaults to 1: AsyncSession is NOT safe for concurrent
-        # use across coroutines — multiple accounts must be serialized.
-        semaphore = asyncio.Semaphore(max_concurrent)
+        # AsyncSession is NOT safe for concurrent use across coroutines.
+        semaphore = asyncio.Semaphore(1)
 
         async def run_one(account: Account):
             if account.circuit_broken:
@@ -54,7 +52,11 @@ class Executor:
         trade_date: date,
     ) -> None:
         # Fetch today's existing orders for dedup
-        existing_orders = await adapter.query_today_orders()
+        try:
+            existing_orders = await adapter.query_today_orders()
+        except Exception as exc:
+            logger.error("Failed to query orders for account %s: %s", account.name, exc)
+            return
         existing_codes = {o.bond_code for o in existing_orders}
 
         for bond in bonds:
@@ -114,10 +116,15 @@ class Executor:
 
         amount = await adapter.max_subscribe_amount(bond.bond_code)
         sub_result = await adapter.subscribe_bond(bond.bond_code, amount)
+        pending_notification: NotifyMessage | None = None
 
         if sub_result.code == SubscribeResultCode.SUCCESS:
             sub.status = SubscriptionStatus.SUBMITTED
             sub.error = None
+            account.consecutive_failures = 0
+        elif sub_result.code == SubscribeResultCode.ALREADY_SUBSCRIBED:
+            sub.status = SubscriptionStatus.SKIPPED
+            sub.error = "already subscribed (broker confirmed)"
             account.consecutive_failures = 0
         elif sub_result.code == SubscribeResultCode.SESSION_EXPIRED:
             # Invalidate pool entry so next run triggers re-login
@@ -127,7 +134,7 @@ class Executor:
                     "Session expired for account %s, evicted from pool", account.name
                 )
             if sub_result.retryable and sub.retry_count < MAX_RETRIES:
-                sub.status = SubscriptionStatus.UNKNOWN
+                sub.status = SubscriptionStatus.FAILED
                 sub.error = sub_result.message
                 sub.retry_count += 1
             else:
@@ -137,7 +144,7 @@ class Executor:
                 if account.consecutive_failures >= CIRCUIT_BREAK_THRESHOLD:
                     account.circuit_broken = True
                     logger.error("Circuit broken for account %s", account.name)
-                    await notify(NotifyMessage(
+                    pending_notification = NotifyMessage(
                         title=f"Circuit Break: {account.name}",
                         body=(
                             f"Account {account.name} circuit broken after "
@@ -145,15 +152,15 @@ class Executor:
                             f"Last error: {sub_result.message}"
                         ),
                         level="error",
-                    ))
+                    )
                 else:
-                    await notify(NotifyMessage(
+                    pending_notification = NotifyMessage(
                         title=f"订阅失败: {bond.bond_code}",
                         body=f"账户 {account.name} 订阅 {bond.bond_code} 失败: {sub_result.message}",
                         level="warning",
-                    ))
+                    )
         elif sub_result.retryable and sub.retry_count < MAX_RETRIES:
-            sub.status = SubscriptionStatus.UNKNOWN
+            sub.status = SubscriptionStatus.FAILED
             sub.error = sub_result.message
             sub.retry_count += 1
         else:
@@ -163,7 +170,7 @@ class Executor:
             if account.consecutive_failures >= CIRCUIT_BREAK_THRESHOLD:
                 account.circuit_broken = True
                 logger.error("Circuit broken for account %s", account.name)
-                await notify(NotifyMessage(
+                pending_notification = NotifyMessage(
                     title=f"Circuit Break: {account.name}",
                     body=(
                         f"Account {account.name} circuit broken after "
@@ -171,15 +178,17 @@ class Executor:
                         f"Last error: {sub_result.message}"
                     ),
                     level="error",
-                ))
+                )
             else:
-                await notify(NotifyMessage(
+                pending_notification = NotifyMessage(
                     title=f"订阅失败: {bond.bond_code}",
                     body=f"账户 {account.name} 订阅 {bond.bond_code} 失败: {sub_result.message}",
                     level="warning",
-                ))
+                )
 
         await self._session.commit()
+        if pending_notification is not None:
+            await notify(pending_notification)
         logger.info(
             "Account %s bond %s → %s",
             account.name, bond.bond_code, sub.status,
