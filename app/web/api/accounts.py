@@ -26,7 +26,11 @@ async def create_account(body: AccountCreate, session: AsyncSession = Depends(ge
         credentials_enc=encrypted,
     )
     session.add(account)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Account name already exists") from None
     await session.refresh(account)
     return account
 

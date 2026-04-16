@@ -238,6 +238,35 @@ async def test_reset_circuit_not_found():
 
 
 @pytest.mark.asyncio
+async def test_create_account_duplicate_name_returns_409():
+    """创建同名账户应返回 409。"""
+    from sqlalchemy.exc import IntegrityError as SAIntegrityError
+
+    mock_session = AsyncMock()
+    mock_session.add = MagicMock()
+    mock_session.commit = AsyncMock(side_effect=SAIntegrityError(None, None, Exception("unique")))
+    mock_session.rollback = AsyncMock()
+
+    async def override_get_db():
+        yield mock_session
+
+    from app.shared.db import get_db
+    app.dependency_overrides[get_db] = override_get_db
+
+    with patch("app.web.api.accounts.get_keys_from_env", return_value=("key1", None)):
+        with patch("app.web.api.accounts.encrypt", return_value="enc"):
+            try:
+                async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                    resp = await client.post(
+                        "/api/accounts/",
+                        json={"name": "dup", "broker": "mock", "credentials_plain": '{"k":"v"}'},
+                    )
+                assert resp.status_code == 409
+            finally:
+                app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_api_key_middleware_blocks_without_key(monkeypatch):
     """API_KEY 设置后，未携带 X-API-Key 的请求应返回 401。"""
     import importlib
