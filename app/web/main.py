@@ -1,9 +1,21 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 import os
-from app.web.api import accounts, config, history, trigger
 
-app = FastAPI(title="CB Auto Subscribe")
+from app.web.api import accounts, config, history, trigger
+from app.worker.main import create_scheduler
+
+
+@asynccontextmanager
+async def lifespan(app):
+    scheduler = create_scheduler()
+    scheduler.start()
+    yield
+    scheduler.shutdown()
+
+
+app = FastAPI(title="CB Auto Subscribe", lifespan=lifespan)
 
 app.include_router(accounts.router, prefix="/api/accounts", tags=["accounts"])
 app.include_router(config.router, prefix="/api/config", tags=["config"])
