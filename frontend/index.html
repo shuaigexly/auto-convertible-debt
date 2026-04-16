@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>可转债自动申购系统</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-800" x-data="app()" x-init="init()">
+
+<div class="max-w-5xl mx-auto p-6">
+  <h1 class="text-2xl font-bold mb-6 text-indigo-700">可转债自动申购系统</h1>
+
+  <!-- Tabs -->
+  <div class="flex space-x-2 mb-6 border-b border-gray-200">
+    <template x-for="tab in tabs" :key="tab.id">
+      <button
+        @click="activeTab = tab.id"
+        :class="activeTab === tab.id ? 'border-b-2 border-indigo-600 text-indigo-600 font-medium' : 'text-gray-500 hover:text-gray-700'"
+        class="px-4 py-2 text-sm transition-colors"
+        x-text="tab.label"
+      ></button>
+    </template>
+  </div>
+
+  <!-- Accounts Tab -->
+  <div x-show="activeTab === 'accounts'">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-lg font-semibold">账户列表</h2>
+      <button @click="showAddForm = !showAddForm" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">
+        + 添加账户
+      </button>
+    </div>
+
+    <!-- Add Account Form -->
+    <div x-show="showAddForm" class="bg-white rounded-lg shadow p-4 mb-4">
+      <h3 class="font-medium mb-3">新增账户</h3>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">账户名称</label>
+          <input x-model="newAccount.name" type="text" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="账户名称">
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">券商</label>
+          <select x-model="newAccount.broker" class="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="mock">模拟 (Mock)</option>
+            <option value="tonghuashun">同花顺</option>
+          </select>
+        </div>
+        <div class="col-span-2">
+          <label class="block text-sm text-gray-600 mb-1">登录凭证 (JSON格式)</label>
+          <textarea x-model="newAccount.credentials_plain" rows="3" class="w-full border rounded-lg px-3 py-2 text-sm font-mono" placeholder='{"username": "xxx", "password": "yyy"}'></textarea>
+        </div>
+      </div>
+      <div class="flex space-x-3 mt-3">
+        <button @click="createAccount()" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700">保存</button>
+        <button @click="showAddForm = false" class="text-gray-500 px-4 py-2 rounded-lg text-sm hover:bg-gray-100">取消</button>
+      </div>
+    </div>
+
+    <!-- Account List -->
+    <div x-show="loading.accounts" class="text-gray-400 text-sm py-4 text-center">加载中...</div>
+    <div x-show="!loading.accounts && accounts.length === 0" class="text-gray-400 text-sm py-4 text-center">暂无账户</div>
+    <div class="space-y-3" x-show="!loading.accounts && accounts.length > 0">
+      <template x-for="account in accounts" :key="account.id">
+        <div class="bg-white rounded-lg shadow p-4 flex items-center justify-between">
+          <div>
+            <div class="font-medium" x-text="account.name"></div>
+            <div class="text-sm text-gray-500">
+              券商: <span x-text="account.broker"></span>
+              &nbsp;|&nbsp;
+              <span :class="account.enabled ? 'text-green-600' : 'text-gray-400'" x-text="account.enabled ? '已启用' : '已禁用'"></span>
+              <template x-if="account.circuit_broken">
+                <span class="text-red-500 ml-2">⚠ 熔断</span>
+              </template>
+            </div>
+          </div>
+          <div class="flex space-x-2">
+            <button
+              @click="account.enabled ? disableAccount(account.id) : enableAccount(account.id)"
+              :class="account.enabled ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200'"
+              class="px-3 py-1 rounded-lg text-sm"
+              x-text="account.enabled ? '禁用' : '启用'"
+            ></button>
+            <button @click="deleteAccount(account.id)" class="bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1 rounded-lg text-sm">删除</button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- History Tab -->
+  <div x-show="activeTab === 'history'">
+    <div class="flex items-center space-x-4 mb-4">
+      <h2 class="text-lg font-semibold">申购记录</h2>
+      <input type="date" x-model="historyDate" @change="loadHistory()" class="border rounded-lg px-3 py-2 text-sm">
+    </div>
+
+    <div class="grid grid-cols-2 gap-6">
+      <!-- Snapshots -->
+      <div>
+        <h3 class="font-medium mb-2 text-gray-700">今日债券快照</h3>
+        <div x-show="loading.history" class="text-gray-400 text-sm py-2">加载中...</div>
+        <div x-show="!loading.history && snapshots.length === 0" class="text-gray-400 text-sm py-2">无数据</div>
+        <div class="space-y-2" x-show="!loading.history">
+          <template x-for="snap in snapshots" :key="snap.id">
+            <div class="bg-white rounded-lg shadow-sm p-3 flex justify-between items-center text-sm">
+              <div>
+                <span class="font-mono" x-text="snap.bond_code"></span>
+                <span class="text-gray-500 ml-2" x-text="snap.bond_name"></span>
+              </div>
+              <span
+                :class="snap.confirmed ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'"
+                class="px-2 py-0.5 rounded text-xs"
+                x-text="snap.confirmed ? '已确认' : '待确认'"
+              ></span>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Subscriptions -->
+      <div>
+        <h3 class="font-medium mb-2 text-gray-700">申购执行状态</h3>
+        <div x-show="loading.history" class="text-gray-400 text-sm py-2">加载中...</div>
+        <div x-show="!loading.history && subscriptions.length === 0" class="text-gray-400 text-sm py-2">无数据</div>
+        <div class="space-y-2" x-show="!loading.history">
+          <template x-for="sub in subscriptions" :key="sub.id">
+            <div class="bg-white rounded-lg shadow-sm p-3 text-sm">
+              <div class="flex justify-between items-center">
+                <span class="font-mono" x-text="sub.bond_code"></span>
+                <span
+                  :class="{
+                    'bg-green-100 text-green-700': sub.status === 'RECONCILED',
+                    'bg-blue-100 text-blue-700': sub.status === 'SUBMITTED',
+                    'bg-red-100 text-red-700': sub.status === 'FAILED',
+                    'bg-gray-100 text-gray-600': !['RECONCILED','SUBMITTED','FAILED'].includes(sub.status)
+                  }"
+                  class="px-2 py-0.5 rounded text-xs"
+                  x-text="sub.status"
+                ></span>
+              </div>
+              <div x-show="sub.error" class="text-red-500 text-xs mt-1" x-text="sub.error"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trigger Tab -->
+  <div x-show="activeTab === 'trigger'">
+    <h2 class="text-lg font-semibold mb-4">手动触发</h2>
+    <div class="grid grid-cols-3 gap-4">
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <div class="text-3xl mb-2">📸</div>
+        <div class="font-medium mb-1">数据快照</div>
+        <div class="text-sm text-gray-500 mb-4">抓取今日申购债券列表</div>
+        <button @click="trigger('snapshot')" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700 w-full">立即执行</button>
+      </div>
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <div class="text-3xl mb-2">📈</div>
+        <div class="font-medium mb-1">执行申购</div>
+        <div class="text-sm text-gray-500 mb-4">对已确认债券发起申购</div>
+        <button @click="trigger('subscribe')" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 w-full">立即执行</button>
+      </div>
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <div class="text-3xl mb-2">🔍</div>
+        <div class="font-medium mb-1">对账核查</div>
+        <div class="text-sm text-gray-500 mb-4">核对申购结果与券商订单</div>
+        <button @click="trigger('reconcile')" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700 w-full">立即执行</button>
+      </div>
+    </div>
+
+    <!-- Trigger Status -->
+    <div x-show="triggerMsg" class="mt-4 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-700" x-text="triggerMsg"></div>
+  </div>
+
+  <!-- Error Toast -->
+  <div x-show="errorMsg" x-transition class="fixed bottom-4 right-4 bg-red-600 text-white px-5 py-3 rounded-lg shadow-lg text-sm" x-text="errorMsg"></div>
+</div>
+
+<script defer src="https://unpkg.com/alpinejs@3/dist/cdn.min.js"></script>
+<script>
+function app() {
+  return {
+    activeTab: 'accounts',
+    tabs: [
+      { id: 'accounts', label: '账户管理' },
+      { id: 'history', label: '申购记录' },
+      { id: 'trigger', label: '手动触发' },
+    ],
+    accounts: [],
+    showAddForm: false,
+    newAccount: { name: '', broker: 'mock', credentials_plain: '' },
+    historyDate: new Date().toISOString().split('T')[0],
+    snapshots: [],
+    subscriptions: [],
+    loading: { accounts: false, history: false },
+    errorMsg: '',
+    triggerMsg: '',
+
+    async init() {
+      await this.loadAccounts();
+    },
+
+    async api(method, path, body) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const resp = await fetch(path, opts);
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`${resp.status}: ${text}`);
+      }
+      if (resp.status === 204) return null;
+      return resp.json();
+    },
+
+    showError(msg) {
+      this.errorMsg = msg;
+      setTimeout(() => { this.errorMsg = ''; }, 4000);
+    },
+
+    async loadAccounts() {
+      this.loading.accounts = true;
+      try {
+        this.accounts = await this.api('GET', '/api/accounts/');
+      } catch (e) {
+        this.showError('加载账户失败: ' + e.message);
+      } finally {
+        this.loading.accounts = false;
+      }
+    },
+
+    async createAccount() {
+      if (!this.newAccount.name || !this.newAccount.credentials_plain) {
+        this.showError('请填写账户名称和凭证');
+        return;
+      }
+      try {
+        await this.api('POST', '/api/accounts/', this.newAccount);
+        this.showAddForm = false;
+        this.newAccount = { name: '', broker: 'mock', credentials_plain: '' };
+        await this.loadAccounts();
+      } catch (e) {
+        this.showError('创建账户失败: ' + e.message);
+      }
+    },
+
+    async enableAccount(id) {
+      try {
+        await this.api('PATCH', `/api/accounts/${id}/enable`);
+        await this.loadAccounts();
+      } catch (e) {
+        this.showError('操作失败: ' + e.message);
+      }
+    },
+
+    async disableAccount(id) {
+      try {
+        await this.api('PATCH', `/api/accounts/${id}/disable`);
+        await this.loadAccounts();
+      } catch (e) {
+        this.showError('操作失败: ' + e.message);
+      }
+    },
+
+    async deleteAccount(id) {
+      if (!confirm('确认删除此账户？')) return;
+      try {
+        await this.api('DELETE', `/api/accounts/${id}`);
+        await this.loadAccounts();
+      } catch (e) {
+        this.showError('删除失败: ' + e.message);
+      }
+    },
+
+    async loadHistory() {
+      if (!this.historyDate) return;
+      this.loading.history = true;
+      try {
+        const [snaps, subs] = await Promise.all([
+          this.api('GET', `/api/history/snapshots?trade_date=${this.historyDate}`),
+          this.api('GET', `/api/history/subscriptions?trade_date=${this.historyDate}`),
+        ]);
+        this.snapshots = snaps;
+        this.subscriptions = subs;
+      } catch (e) {
+        this.showError('加载记录失败: ' + e.message);
+      } finally {
+        this.loading.history = false;
+      }
+    },
+
+    async trigger(job) {
+      try {
+        await this.api('POST', `/api/trigger/${job}`);
+        this.triggerMsg = `已触发: ${job}`;
+        setTimeout(() => { this.triggerMsg = ''; }, 3000);
+      } catch (e) {
+        this.showError('触发失败: ' + e.message);
+      }
+    },
+  };
+}
+</script>
+</body>
+</html>
