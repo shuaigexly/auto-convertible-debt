@@ -17,39 +17,49 @@ class Reconciler:
     async def reconcile_account(
         self, account: Account, adapter: BrokerAdapter, trade_date: date
     ) -> None:
-        broker_orders = await adapter.query_today_orders()
-        submitted_codes = {
-            o.bond_code for o in broker_orders
-            if o.status in (OrderStatus.FILLED, OrderStatus.PENDING)
-        }
-
-        result = await self._session.execute(
-            select(Subscription).where(
-                Subscription.account_id == account.id,
-                Subscription.trade_date == trade_date,
-                Subscription.status.in_([
-                    SubscriptionStatus.SUBMITTED,
-                    SubscriptionStatus.UNKNOWN,
-                ]),
-            )
-        )
-        subs = result.scalars().all()
-
-        for sub in subs:
-            if sub.bond_code in submitted_codes:
-                sub.status = SubscriptionStatus.RECONCILED
-                logger.info("Reconciled %s for account %s", sub.bond_code, account.name)
-            else:
-                sub.status = SubscriptionStatus.FAILED
-                sub.error = "not found in broker orders during reconciliation"
-                logger.warning(
-                    "Bond %s not found in broker orders for account %s",
-                    sub.bond_code, account.name,
+        try:
+            broker_orders = await adapter.query_today_orders()
+            submitted_codes = {
+                o.bond_code for o in broker_orders
+                if o.status in (
+                    OrderStatus.FILLED,
+                    OrderStatus.PENDING,
+                    OrderStatus.UNKNOWN,
                 )
-                await notify(NotifyMessage(
-                    title=f"对账失败: {sub.bond_code}",
-                    body=f"账户 {account.name} 债券 {sub.bond_code} 未出现在券商委托记录中",
-                    level="warning",
-                ))
+            }
 
-        await self._session.commit()
+            result = await self._session.execute(
+                select(Subscription).where(
+                    Subscription.account_id == account.id,
+                    Subscription.trade_date == trade_date,
+                    Subscription.status.in_([
+                        SubscriptionStatus.SUBMITTED,
+                        SubscriptionStatus.UNKNOWN,
+                    ]),
+                )
+            )
+            subs = result.scalars().all()
+
+            for sub in subs:
+                if sub.bond_code in submitted_codes:
+                    sub.status = SubscriptionStatus.RECONCILED
+                    logger.info(
+                        "Reconciled %s for account %s", sub.bond_code, account.name
+                    )
+                else:
+                    sub.status = SubscriptionStatus.FAILED
+                    sub.error = "not found in broker orders during reconciliation"
+                    logger.warning(
+                        "Bond %s not found in broker orders for account %s",
+                        sub.bond_code, account.name,
+                    )
+                    await notify(NotifyMessage(
+                        title=f"对账失败: {sub.bond_code}",
+                        body=f"账户 {account.name} 债券 {sub.bond_code} 未出现在券商委托记录中",
+                        level="warning",
+                    ))
+
+            await self._session.commit()
+        except Exception:
+            await self._session.rollback()
+            raise
