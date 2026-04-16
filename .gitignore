@@ -7,3 +7,4 @@ data/evidence/
 *.egg-info/
 dist/
 build/
+test_cb.db

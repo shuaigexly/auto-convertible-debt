@@ -14,9 +14,10 @@ CIRCUIT_BREAK_THRESHOLD = 3
 
 
 class Executor:
-    def __init__(self, session: AsyncSession, dry_run: bool = False):
+    def __init__(self, session: AsyncSession, dry_run: bool = False, adapter_pool: dict | None = None):
         self._session = session
         self._dry_run = dry_run
+        self._adapter_pool = adapter_pool  # Optional ref to module-level pool for session invalidation
 
     async def run_all_accounts(
         self,
@@ -24,8 +25,10 @@ class Executor:
         adapters: dict[int, BrokerAdapter],
         bonds: list[BondInfo],
         trade_date: date,
-        max_concurrent: int = 3,
+        max_concurrent: int = 1,
     ) -> None:
+        # max_concurrent defaults to 1: AsyncSession is NOT safe for concurrent
+        # use across coroutines — multiple accounts must be serialized.
         semaphore = asyncio.Semaphore(max_concurrent)
 
         async def run_one(account: Account):
@@ -101,6 +104,24 @@ class Executor:
             sub.status = SubscriptionStatus.SUBMITTED
             sub.error = None
             account.consecutive_failures = 0
+        elif sub_result.code == SubscribeResultCode.SESSION_EXPIRED:
+            # Invalidate pool entry so next run triggers re-login
+            if self._adapter_pool is not None:
+                self._adapter_pool.pop(account.id, None)
+                logger.warning(
+                    "Session expired for account %s, evicted from pool", account.name
+                )
+            if sub_result.retryable and sub.retry_count < MAX_RETRIES:
+                sub.status = SubscriptionStatus.UNKNOWN
+                sub.error = sub_result.message
+                sub.retry_count += 1
+            else:
+                sub.status = SubscriptionStatus.FAILED
+                sub.error = sub_result.message
+                account.consecutive_failures += 1
+                if account.consecutive_failures >= CIRCUIT_BREAK_THRESHOLD:
+                    account.circuit_broken = True
+                    logger.error("Circuit broken for account %s", account.name)
         elif sub_result.retryable and sub.retry_count < MAX_RETRIES:
             sub.status = SubscriptionStatus.UNKNOWN
             sub.error = sub_result.message

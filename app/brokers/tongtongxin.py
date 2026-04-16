@@ -5,6 +5,7 @@ In Docker: NOT supported (easytrader requires a running GUI client).
 Use this adapter only in local/non-Docker deployments.
 For Docker, use a Playwright-based adapter instead.
 """
+import asyncio
 import logging
 from datetime import date
 from app.brokers.base import (
@@ -38,11 +39,16 @@ class TonghuashunBroker(BrokerAdapter):
         """
         try:
             import easytrader
-            self._trader = easytrader.use("ths")
-            self._trader.connect(
-                exe_path=credentials.get("exe_path", ""),
-                comm_password=credentials.get("comm_password", ""),
-            )
+            loop = asyncio.get_running_loop()
+            exe_path = credentials.get("exe_path", "")
+            comm_password = credentials.get("comm_password", "")
+
+            def _connect():
+                trader = easytrader.use("ths")
+                trader.connect(exe_path=exe_path, comm_password=comm_password)
+                return trader
+
+            self._trader = await loop.run_in_executor(None, _connect)
             self._logged_in = True
             logger.info("同花顺 login succeeded")
             return True
@@ -76,7 +82,11 @@ class TonghuashunBroker(BrokerAdapter):
                 message="not logged in",
             )
         try:
-            result = self._trader.buy(bond_code, price=0, amount=amount)
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: self._trader.buy(bond_code, price=0, amount=amount),
+            )
             raw = str(result)
             logger.info("subscribe_bond %s result: %s", bond_code, raw)
             # easytrader returns list of dicts on success
@@ -106,7 +116,8 @@ class TonghuashunBroker(BrokerAdapter):
         if not self._trader:
             return []
         try:
-            orders_df = self._trader.today_entrusts
+            loop = asyncio.get_running_loop()
+            orders_df = await loop.run_in_executor(None, lambda: self._trader.today_entrusts)
             orders = []
             for _, row in orders_df.iterrows():
                 raw_status = str(row.get("状态", ""))

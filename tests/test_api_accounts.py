@@ -1,3 +1,4 @@
+import os
 import pytest
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -104,3 +105,71 @@ async def test_enable_account_not_found():
         assert resp.status_code == 404
     finally:
         app.dependency_overrides.clear()
+
+
+def test_account_create_invalid_json_credentials():
+    """credentials_plain 不是合法 JSON 时应抛出 ValidationError。"""
+    from pydantic import ValidationError
+    from app.shared.schemas import AccountCreate
+
+    with pytest.raises(ValidationError, match="credentials_plain must be valid JSON"):
+        AccountCreate(name="x", broker="mock", credentials_plain="not-json")
+
+
+def test_account_create_non_object_json():
+    """credentials_plain 是 JSON 数组时应抛出 ValidationError。"""
+    from pydantic import ValidationError
+    from app.shared.schemas import AccountCreate
+
+    with pytest.raises(ValidationError, match="JSON object"):
+        AccountCreate(name="x", broker="mock", credentials_plain='["a","b"]')
+
+
+def test_account_create_valid_json():
+    """合法 JSON 对象应通过验证。"""
+    from app.shared.schemas import AccountCreate
+
+    obj = AccountCreate(name="x", broker="mock", credentials_plain='{"user":"u","pass":"p"}')
+    assert obj.credentials_plain == '{"user":"u","pass":"p"}'
+
+
+@pytest.mark.asyncio
+async def test_api_key_middleware_blocks_without_key(monkeypatch):
+    """API_KEY 设置后，未携带 X-API-Key 的请求应返回 401。"""
+    import importlib
+    monkeypatch.setenv("API_KEY", "secret-key-123")
+    # Reload web.main so the middleware picks up the new env var
+    import app.web.main as web_main
+    importlib.reload(web_main)
+    test_app = web_main.app
+
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
+        resp = await client.get("/api/accounts/")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_api_key_middleware_allows_with_correct_key(monkeypatch):
+    """携带正确 X-API-Key 的请求应通过。"""
+    import importlib
+    monkeypatch.setenv("API_KEY", "secret-key-456")
+    import app.web.main as web_main
+    importlib.reload(web_main)
+    test_app = web_main.app
+
+    mock_session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+    mock_session.execute = AsyncMock(return_value=mock_result)
+
+    async def override_get_db():
+        yield mock_session
+
+    from app.shared.db import get_db
+    test_app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
+            resp = await client.get("/api/accounts/", headers={"X-API-Key": "secret-key-456"})
+        assert resp.status_code == 200
+    finally:
+        test_app.dependency_overrides.clear()

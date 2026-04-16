@@ -1,5 +1,6 @@
 from datetime import date, datetime
-from pydantic import BaseModel
+import json
+from pydantic import BaseModel, field_validator
 from typing import Optional
 
 
@@ -7,6 +8,17 @@ class AccountCreate(BaseModel):
     name: str
     broker: str
     credentials_plain: str  # JSON string of plain credentials
+
+    @field_validator("credentials_plain")
+    @classmethod
+    def must_be_valid_json(cls, v: str) -> str:
+        try:
+            parsed = json.loads(v)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"credentials_plain must be valid JSON: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("credentials_plain must be a JSON object")
+        return v
 
 
 class AccountOut(BaseModel):

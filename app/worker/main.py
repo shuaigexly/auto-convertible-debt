@@ -9,7 +9,9 @@ from datetime import date
 from apscheduler.events import EVENT_JOB_ERROR
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
+from app.brokers.base import BrokerAdapter
 from app.brokers.miniqmt_adapter import MiniQMTBroker
 from app.brokers.mock_broker import MockBroker
 from app.brokers.tongtongxin import TonghuashunBroker
@@ -28,8 +30,12 @@ from app.worker.reconciler import Reconciler
 logger = logging.getLogger(__name__)
 calendar = CalendarService()
 
+# Module-level adapter pool: account_id → logged-in BrokerAdapter
+# Populated by job_warmup; consumed by _run_subscribe.
+_adapter_pool: dict[int, BrokerAdapter] = {}
 
-def _get_adapter(account: Account):
+
+def _get_adapter(account: Account) -> BrokerAdapter:
     if account.broker == "mock":
         return MockBroker()
     if account.broker == "miniqmt":
@@ -57,31 +63,37 @@ async def job_snapshot() -> None:
         ]
         agg = BondAggregator(sources)
         confirmed, pending = await agg.aggregate(today)
-        for bond in confirmed:
+        saved = 0
+        for bond, is_confirmed in [(b, True) for b in confirmed] + [(b, False) for b in pending]:
+            # Check-before-insert to handle idempotent double-triggers.
+            existing = await session.execute(
+                select(BondSnapshot).where(
+                    BondSnapshot.trade_date == today,
+                    BondSnapshot.bond_code == bond.bond_code,
+                    BondSnapshot.source == bond.source,
+                )
+            )
+            if existing.scalars().first() is not None:
+                continue
             snap = BondSnapshot(
                 trade_date=today,
                 bond_code=bond.bond_code,
                 bond_name=bond.bond_name,
                 market=bond.market,
                 source=bond.source,
-                confirmed=True,
+                confirmed=is_confirmed,
             )
             session.add(snap)
-        for bond in pending:
-            snap = BondSnapshot(
-                trade_date=today,
-                bond_code=bond.bond_code,
-                bond_name=bond.bond_name,
-                market=bond.market,
-                source=bond.source,
-                confirmed=False,
-            )
-            session.add(snap)
-        await session.commit()
+            saved += 1
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            logger.warning("job_snapshot: IntegrityError on commit (concurrent run?), rolled back")
+            return
     logger.info(
-        "job_snapshot: saved %d confirmed, %d pending",
-        len(confirmed),
-        len(pending),
+        "job_snapshot: saved %d new records (%d confirmed, %d pending)",
+        saved, len(confirmed), len(pending),
     )
 
 
@@ -107,6 +119,9 @@ async def job_warmup() -> None:
         ok = await adapter.login(creds)
         if not ok:
             logger.warning("job_warmup: login failed for account %s", account.id)
+            continue
+        _adapter_pool[account.id] = adapter
+        logger.info("job_warmup: account %s logged in and pooled", account.id)
 
 
 async def _run_subscribe(trade_date: date, retry_only: bool = False) -> None:
@@ -115,7 +130,23 @@ async def _run_subscribe(trade_date: date, retry_only: bool = False) -> None:
     async with _get_session_factory()() as session:
         result = await session.execute(select(Account).where(Account.enabled.is_(True)))
         accounts = result.scalars().all()
-        adapters = {a.id: _get_adapter(a) for a in accounts}
+
+        # Reuse pooled adapters from warmup; fall back to fresh login if missing.
+        adapters: dict[int, BrokerAdapter] = {}
+        for a in accounts:
+            adapter = _adapter_pool.get(a.id)
+            if adapter is None or not adapter.check_session():
+                adapter = _get_adapter(a)
+                creds = _decrypt_creds(a)
+                ok = await adapter.login(creds)
+                if ok:
+                    _adapter_pool[a.id] = adapter
+                    logger.info("_run_subscribe: re-logged in account %s", a.id)
+                else:
+                    logger.warning("_run_subscribe: login failed for account %s, skipping", a.id)
+                    continue
+            adapters[a.id] = adapter
+
         snaps_result = await session.execute(
             select(BondSnapshot).where(
                 BondSnapshot.trade_date == trade_date,
@@ -149,7 +180,7 @@ async def _run_subscribe(trade_date: date, retry_only: bool = False) -> None:
             )
             for s in snaps
         ]
-        executor = Executor(session, dry_run=dry_run)
+        executor = Executor(session, dry_run=dry_run, adapter_pool=_adapter_pool)
         try:
             await executor.run_all_accounts(accounts, adapters, bonds, trade_date)
         except Exception as exc:
@@ -183,9 +214,22 @@ async def job_reconcile() -> None:
     async with _get_session_factory()() as session:
         result = await session.execute(select(Account).where(Account.enabled.is_(True)))
         accounts = result.scalars().all()
+        reconciler = Reconciler(session)
         for account in accounts:
-            adapter = _get_adapter(account)
-            reconciler = Reconciler(session)
+            # Reuse pooled (logged-in) adapter; fall back to fresh login if missing.
+            adapter = _adapter_pool.get(account.id)
+            if adapter is None or not adapter.check_session():
+                adapter = _get_adapter(account)
+                creds = _decrypt_creds(account)
+                ok = await adapter.login(creds)
+                if ok:
+                    _adapter_pool[account.id] = adapter
+                    logger.info("job_reconcile: re-logged in account %s", account.id)
+                else:
+                    logger.warning(
+                        "job_reconcile: login failed for account %s, skipping", account.id
+                    )
+                    continue
             try:
                 await reconciler.reconcile_account(account, adapter, today)
             except Exception as exc:

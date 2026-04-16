@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import date
 from app.data_sources.base import BondInfo, DataSource
@@ -12,7 +13,11 @@ class AKShareSource(DataSource):
         try:
             import akshare as ak
             date_str = trade_date.strftime("%Y%m%d")
-            df = ak.bond_cov_issue_cninfo(start_date=date_str, end_date=date_str)
+            loop = asyncio.get_running_loop()
+            df = await loop.run_in_executor(
+                None,
+                lambda: ak.bond_cov_issue_cninfo(start_date=date_str, end_date=date_str),
+            )
             bonds = []
             for _, row in df.iterrows():
                 code = str(row.get("网上申购代码", "")).strip()

@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Static fallback: 2025 A-share non-trading dates (public holidays only, weekends excluded)
+# Static fallback: A-share non-trading dates (public holidays only, weekends excluded)
 _STATIC_HOLIDAYS_2025 = {
     date(2025, 1, 1),   # New Year
     date(2025, 1, 28), date(2025, 1, 29), date(2025, 1, 30),
@@ -20,10 +20,24 @@ _STATIC_HOLIDAYS_2025 = {
     date(2025, 10, 6), date(2025, 10, 7), date(2025, 10, 8),  # National Day
 }
 
+# 2026 A-share public holidays (CSRC/SSE official schedule)
+_STATIC_HOLIDAYS_2026 = {
+    date(2026, 1, 1),   # New Year
+    date(2026, 1, 28), date(2026, 1, 29), date(2026, 1, 30),
+    date(2026, 2, 2), date(2026, 2, 3), date(2026, 2, 4),  # Spring Festival
+    date(2026, 4, 6),   # Qingming
+    date(2026, 5, 1), date(2026, 5, 4), date(2026, 5, 5),  # Labour Day
+    date(2026, 6, 19),  # Dragon Boat
+    date(2026, 10, 1), date(2026, 10, 2), date(2026, 10, 5),
+    date(2026, 10, 6), date(2026, 10, 7), date(2026, 10, 8),  # National Day
+}
+
+_STATIC_HOLIDAYS = _STATIC_HOLIDAYS_2025 | _STATIC_HOLIDAYS_2026
+
 
 class CalendarService:
     def __init__(self):
-        self._holidays: set[date] = set(_STATIC_HOLIDAYS_2025)
+        self._holidays: set[date] = set(_STATIC_HOLIDAYS)
         self._trading_days_from_akshare: set[date] | None = None
         self._try_load_from_akshare()
 

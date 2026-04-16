@@ -46,18 +46,31 @@ def test_akshare_trading_days_used_when_loaded():
 
 def test_akshare_pandas_timestamp_normalized():
     """Pandas Timestamps returned by AKShare are normalized to date objects."""
-    import types
-    fake_ts = types.SimpleNamespace(date=lambda: date(2025, 4, 16))
     import pandas as pd
-    real_ts = pd.Timestamp("2025-04-16")
 
     svc = _make_svc_no_akshare()
 
     fake_df = MagicMock()
-    fake_df.__getitem__.return_value.tolist.return_value = [real_ts]
+    fake_df.__getitem__.return_value.tolist.return_value = [pd.Timestamp("2025-04-16")]
 
     with patch("akshare.tool_trade_date_hist_sina", return_value=fake_df):
         svc._try_load_from_akshare()
 
     assert svc._trading_days_from_akshare == {date(2025, 4, 16)}
     assert svc.is_trading_day(date(2025, 4, 16))
+
+
+def test_2026_holiday_is_not_trading_day():
+    """2026 静态节假日应被识别为非交易日（AKShare 不可用时）。"""
+    svc = _make_svc_no_akshare()
+    # 2026 Spring Festival
+    assert not svc.is_trading_day(date(2026, 1, 28))
+    # 2026 National Day
+    assert not svc.is_trading_day(date(2026, 10, 1))
+
+
+def test_2026_regular_weekday_is_trading_day():
+    """2026 普通工作日应被识别为交易日。"""
+    svc = _make_svc_no_akshare()
+    # 2026-03-16 is a Monday, not a holiday
+    assert svc.is_trading_day(date(2026, 3, 16))
