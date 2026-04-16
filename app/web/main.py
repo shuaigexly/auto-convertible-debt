@@ -1,23 +1,12 @@
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 import os
 
 from app.web.api import accounts, config, history, trigger
-from app.worker.main import create_scheduler
 
+app = FastAPI(title="CB Auto Subscribe")
 
-@asynccontextmanager
-async def lifespan(app):
-    scheduler = create_scheduler()
-    scheduler.start()
-    yield
-    scheduler.shutdown()
-
-
-app = FastAPI(title="CB Auto Subscribe", lifespan=lifespan)
-
-_PUBLIC_PATHS = {"/", "/docs", "/openapi.json", "/redoc"}
+_PUBLIC_PATHS = {"/", "/docs", "/openapi.json", "/redoc", "/health"}
 
 
 @app.middleware("http")
@@ -41,3 +30,8 @@ _frontend_dir = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
 @app.get("/", include_in_schema=False)
 async def serve_index():
     return FileResponse(os.path.join(_frontend_dir, "index.html"))
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
