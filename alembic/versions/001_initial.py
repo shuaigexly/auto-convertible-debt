@@ -20,9 +20,9 @@ def upgrade():
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("broker", sa.String(50), nullable=False),
         sa.Column("credentials_enc", sa.Text, nullable=False),
-        sa.Column("enabled", sa.Boolean, default=True),
-        sa.Column("circuit_broken", sa.Boolean, default=False),
-        sa.Column("consecutive_failures", sa.Integer, default=0),
+        sa.Column("enabled", sa.Boolean, server_default=sa.true()),
+        sa.Column("circuit_broken", sa.Boolean, server_default=sa.false()),
+        sa.Column("consecutive_failures", sa.Integer, server_default=sa.text("0")),
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
     )
     op.create_table(
@@ -33,7 +33,7 @@ def upgrade():
         sa.Column("bond_name", sa.String(100)),
         sa.Column("market", sa.String(5)),
         sa.Column("source", sa.String(50)),
-        sa.Column("confirmed", sa.Boolean, default=False),
+        sa.Column("confirmed", sa.Boolean, server_default=sa.false()),
         sa.UniqueConstraint("trade_date", "bond_code", "source"),
     )
     op.create_index("ix_bond_snapshots_trade_date", "bond_snapshots", ["trade_date"])
@@ -44,9 +44,17 @@ def upgrade():
         sa.Column("bond_code", sa.String(10), nullable=False),
         sa.Column("bond_name", sa.String(100)),
         sa.Column("account_id", sa.Integer, sa.ForeignKey("accounts.id"), nullable=False),
-        sa.Column("status", sa.String(20), default="NEW"),
+        sa.Column(
+            "status",
+            sa.Enum(
+                "NEW", "SUBMITTING", "SUBMITTED", "UNKNOWN", "RECONCILED", "FAILED", "SKIPPED",
+                name="subscriptionstatus",
+            ),
+            nullable=False,
+            server_default="NEW",
+        ),
         sa.Column("error", sa.Text),
-        sa.Column("retry_count", sa.Integer, default=0),
+        sa.Column("retry_count", sa.Integer, server_default=sa.text("0")),
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime, server_default=sa.func.now()),
         sa.UniqueConstraint("trade_date", "account_id", "bond_code"),
@@ -78,3 +86,4 @@ def upgrade():
 def downgrade():
     for t in ["app_logs", "audit_logs", "config", "subscriptions", "bond_snapshots", "accounts"]:
         op.drop_table(t)
+    op.execute("DROP TYPE IF EXISTS subscriptionstatus")

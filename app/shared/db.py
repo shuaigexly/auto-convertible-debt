@@ -1,17 +1,30 @@
 import os
+from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+_engine = None
+_session_factory = None
 
-engine = create_async_engine(DATABASE_URL, echo=False)
-AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+def _get_engine():
+    global _engine
+    if _engine is None:
+        _engine = create_async_engine(os.environ["DATABASE_URL"], echo=False)
+    return _engine
+
+
+def _get_session_factory():
+    global _session_factory
+    if _session_factory is None:
+        _session_factory = async_sessionmaker(_get_engine(), expire_on_commit=False)
+    return _session_factory
 
 
 class Base(DeclarativeBase):
     pass
 
 
-async def get_db() -> AsyncSession:
-    async with AsyncSessionLocal() as session:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with _get_session_factory()() as session:
         yield session
