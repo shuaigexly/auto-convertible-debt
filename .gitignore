@@ -1,0 +1,9 @@
+data/postgres/
+.env
+__pycache__/
+*.pyc
+data/evidence/
+.pytest_cache/
+*.egg-info/
+dist/
+build/

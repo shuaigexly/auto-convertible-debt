@@ -1,0 +1,4 @@
+-r requirements.txt
+playwright==1.44.0
+pyautogui==0.9.54
+easytrader==0.20.4
