@@ -134,6 +134,35 @@ async def test_eastmoney_source_returns_bonds_on_success():
 
 
 @pytest.mark.asyncio
+async def test_eastmoney_source_detects_sh_market():
+    """CORRECODE (申购代码) 以 730 开头, BOND_CODE (交易代码) 以 113 开头 → 应识别为 SH。"""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "result": {
+            "data": [
+                {
+                    "VALUE_DATE": "2026-04-16 00:00:00",
+                    "CORRECODE": "730888",
+                    "SECURITY_NAME_ABBR": "沪市转债",
+                    "BOND_CODE": "113888",
+                },
+            ],
+            "pages": 1,
+        }
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
+        src = EastMoneySource()
+        results = await src.fetch(date(2026, 4, 16))
+
+    assert len(results) == 1
+    assert results[0].bond_code == "730888"
+    assert results[0].market == "SH"
+
+
+@pytest.mark.asyncio
 async def test_jisilu_source_returns_bonds_on_success():
     mock_response = MagicMock()
     mock_response.json.return_value = {

@@ -44,10 +44,11 @@ class EastMoneySource(DataSource):
                         code = str(row.get("CORRECODE", "")).strip()
                         if not code:
                             continue
+                        bond_code_raw = str(row.get("BOND_CODE", "")).strip()
                         bonds.append(BondInfo(
                             bond_code=code,
                             bond_name=str(row.get("SECURITY_NAME_ABBR", "")).strip(),
-                            market="SH" if code.startswith(("110", "113")) else "SZ",
+                            market="SH" if bond_code_raw.startswith(("110", "113")) else "SZ",
                             trade_date=trade_date,
                             source=self.name,
                         ))
